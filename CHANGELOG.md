@@ -74,6 +74,31 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ## [Não lançado]
 
+Sprint 1 em andamento (tarefas 1.1 a 1.5 concluídas; faltam 1.6 a 1.10). A versão `v0.1.0` será lançada quando a Sprint 1 terminar.
+
+### Adicionado
+
+- Scaffold do projeto: Vite 5, React 18, TypeScript 5 (modo estrito), Tailwind 3, Zustand, ESLint 9, Prettier e Vitest.
+- Estrutura em camadas: `src/domain` (puro), `src/application`, `src/infrastructure` (`supabase` e `local`), `src/ui` e `src/config`.
+- Regra de ESLint que impede `src/domain/` de importar React, Supabase, Zustand, UI, infraestrutura ou aplicação, mantendo o motor puro (DEC-F).
+- Tokens de cor Nexus (verde, branco e preto, §7 do documento de requisitos) no Tailwind e layout base com cabeçalho institucional.
+- Migração `supabase/migrations/0001_schema.sql` com 17 tabelas normalizadas (DEC-G):
+  - `UNIQUE (shift_id, machine_id)` e `UNIQUE (shift_id, room_id)` em `allocations` (RN10, RNF02);
+  - trigger `assert_machine_usable` que impede alocar ou travar máquina em manutenção;
+  - função `bump_shift_version` para concorrência otimista por turno;
+  - RLS restrita a usuários autenticados.
+- Seed `supabase/seed.sql` com as 29 máquinas (ids únicos para unidades repetidas: `v6-01` a `v6-04`, `v5-01`, `v5-02`, `n8-01`, `n8-02`), 6 sondas, 33 salas com zona e proximidade do laudo, e configuração inicial de pesos do motor.
+- Testes de verificação dos arquivos SQL (`tests/schema.test.ts`) e teste de fumaça do ambiente.
+- `.env.example` com as variáveis do Supabase.
+
+### Pendências conhecidas
+
+- A migração e o seed ainda **não foram executados** em um Postgres real, pois o projeto Supabase não foi criado (tarefa 0.6). Os testes atuais só verificam o texto dos arquivos SQL.
+- Seed de cursos e `course_machine_rules` aguarda a validação da hipótese H2 com os operadores.
+- Valores de zona e proximidade (Zona 1 = 30, Zona 2 = 10, 2º andar = 0) são hipóteses a validar.
+- Tarefas 1.6 a 1.10 (repositórios, CRUD, autenticação e salvamento transacional) dependem do projeto Supabase.
+- `npm audit` reporta 13 vulnerabilidades (2 críticas, 1 alta) em dependências, a analisar.
+
 ---
 
 ## [v0.0.0] - 2026-11-11
