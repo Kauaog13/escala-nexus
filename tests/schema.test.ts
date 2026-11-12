@@ -4,9 +4,13 @@ import { describe, expect, it } from 'vitest';
 const seed = readFileSync('supabase/seed.sql', 'utf-8');
 const migration = readFileSync('supabase/migrations/0001_schema.sql', 'utf-8');
 
-/** Extrai as linhas de VALUES de um INSERT de máquinas: `('id', ...` */
 function machineIds(): string[] {
   const block = seed.split('INSERT INTO probes')[0] ?? '';
+  return [...block.matchAll(/^\s*\('([a-z0-9-]+)',/gm)].map((m) => m[1] as string);
+}
+
+function courseIds(): string[] {
+  const block = seed.split('INSERT INTO courses')[1]?.split('INSERT INTO course_machine_rules')[0] ?? '';
   return [...block.matchAll(/^\s*\('([a-z0-9-]+)',/gm)].map((m) => m[1] as string);
 }
 
@@ -31,6 +35,16 @@ describe('seed.sql', () => {
     expect(seed).toContain('generate_series(1, 23)');
     expect(seed).toContain('generate_series(1, 10)');
   });
+
+  it('cadastra os 22 cursos oficiais da Nexus (9 Pós-Graduações e 13 Modulares)', () => {
+    const ids = courseIds();
+    expect(ids).toHaveLength(22);
+    expect(ids).toContain('pg-us-ecof');
+    expect(ids).toContain('pg-us-mefe');
+    expect(ids).toContain('pg-us-giob');
+    expect(ids).toContain('mod-figado-elastografia');
+    expect(ids).toContain('mod-hemodinamica-neonatal');
+  });
 });
 
 describe('0001_schema.sql', () => {
@@ -51,4 +65,3 @@ describe('0001_schema.sql', () => {
     expect(migration).not.toMatch(/shifts_payload/);
   });
 });
-

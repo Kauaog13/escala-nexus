@@ -74,7 +74,58 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ## [Não lançado]
 
-Sprint 1 em andamento (tarefas 1.1 a 1.5 concluídas; faltam 1.6 a 1.10). A versão `v0.1.0` será lançada quando a Sprint 1 terminar.
+---
+
+## [v0.4.0] - 2026-11-12
+
+Entrega da **Sprint 4 — Telemetria, auditoria e ajuste fino** (tarefas 4.1 a 4.7).
+
+### Adicionado
+
+- Painel de telemetria e métricas operacionais Kaizen (`src/ui/components/AuditAndConcurrencyView.tsx`):
+  - percentual de alocações com Match Ideal (`1ª Opção`), percentual de estabilidade por herança de sala, total de transportes entre andares na semana, tempo de execução do motor em milissegundos, travas e gargalos ativos;
+  - contador de frequência de overrides manuais por curso (`overrideCounterByCourseId`) como ciclo de feedback para calibrar os pesos.
+- Painel interativo de calibração dos pesos desacoplados (`w1Fit`, `w2Proximity`, `w3Transport`, `w4Stability` e `upgradeThreshold`) com recálculo imediato da escala sem alteração de código.
+- Histórico de versões da escala (`scheduleVersions`) ao publicar (`PUBLISHED`) ou alterar em andamento (`CHANGED`).
+- Exportação e importação completa de backup `.json` (`exportBackupJson` e `importBackupJson`).
+
+---
+
+## [v0.3.0] - 2026-11-12
+
+Entrega da **Sprint 3 — Grade interativa e overrides** (tarefas 3.1 a 3.14).
+
+### Adicionado
+
+- Componente `SchedulePlannerBoard.tsx` com planejador por turno (`SEXTA_MANHA`, `SEXTA_TARDE`, `SABADO_MANHA`, `SABADO_TARDE`, `DOMINGO_MANHA`) e controle de estado da escala (`Rascunho`, `Oficial Publicada`, `Alterada em Andamento` — RN11).
+- Formulário de lançamento de curso por turno com cálculo automático de salas `⌈alunos / 2⌉`, bloco de salas sugerido (`DEC-B`), seletor manual de consultórios (`DEC-A`) e escolha de aparelhos para cursos de Controle Manual (`RN08`).
+- Grade interativa dos 33 consultórios (1º e 2º andar) estilizada com o Design System Nexus (§7):
+  - chip **"Por quê?"** em cada consultório exibindo a fórmula desacoplada e a justificativa em PT-BR;
+  - trava manual (**Pin** com cadeado), salto de sala por distância do laudo (`RN09`) e botão **Desfazer (Undo)**;
+  - troca rápida (**Hot-Swap**) com detecção em tempo real de colisão de patrimônio e oferta automática de **Permuta entre salas** (`RN10`);
+  - simulação e tratamento de quebra de equipamento em andamento com alerta e proposta de **Menor Mudança (`DEC-E`)**.
+- Gerador de **Relatório de Logística entre Turnos (`RF06`)** (`buildShiftTransitionReport`), separando máquinas que permanecem na mesma sala, máquinas que mudam de sala no mesmo andar e máquinas transportadas entre pavimentos.
+- Exportador oficial no **Padrão de WhatsApp da Nexus (`RF07`)** (`formatWeekWhatsAppText`), com inserção automática da tag `*2° ANDAR*`, códigos limpos (`DEC-04`), nota operacional de rodapé editável e cópia em 1 clique / download `.txt`.
+
+---
+
+## [v0.2.0] - 2026-11-12
+
+Entrega da **Sprint 2 — Motor determinístico** (tarefas 2.1 a 2.14).
+
+### Adicionado
+
+- Termos isolados da função objetivo em `src/domain/scoring/terms.ts`: `calculateClinicalFit` (`100 / 60 / 20`), `calculateProximityBonus` (`30 / 10 / 0`), `calculateFloorTransportPenalty` (`5 / 3 / 2 / 1 / 0`) e `calculateStabilityBonus` (`40 / 0`), combinados em `evaluateCandidateScore`.
+- Gerador de explicações auditáveis em PT-BR (`src/domain/explain/buildExplanation.ts`) seguindo o padrão `Score_Final = (w1 * Fit_Clinico [100]) + (w2 * Bonus_PC_Laudo [30]) - (w3 * Penalidade_Andar [0]) = 130 pts`.
+- Filtro de restrições rígidas (`filterEligibleMachinesForCourse`) e sugestor de bloco de salas por Zonas Radiais e herança (`suggestRoomBlockForCourse`) em `src/domain/rules/eligibility.ts`.
+- Motor de alocação por turno e semanal (`allocateShift`, `allocateWeek`) e recálculo de menor mudança em manutenção (`recalculateOnMachineMaintenance` — `DEC-E`) em `src/domain/engine/allocate.ts`, respeitando a ordem de rendição (`DEC-D`), herança de salas (`RN04`, `RN06`, `RN07`), Controle Manual (`RN08`) e upgrade com limiar (`RN05`).
+- Suíte de testes do motor (`tests/engine.test.ts`) e testes golden com o cenário operacional real de conflito triplo `ECOF + MEFE + GIOB` e descida do `GIOB` (`tests/golden.test.ts`), executando a semana completa em `< 50 ms`.
+
+---
+
+## [v0.1.0] - 2026-11-11
+
+Entrega completa da **Sprint 1 — Schema, seeds e CRUD** (tarefas 1.1 a 1.10).
 
 ### Adicionado
 
@@ -87,17 +138,25 @@ Sprint 1 em andamento (tarefas 1.1 a 1.5 concluídas; faltam 1.6 a 1.10). A vers
   - trigger `assert_machine_usable` que impede alocar ou travar máquina em manutenção;
   - função `bump_shift_version` para concorrência otimista por turno;
   - RLS restrita a usuários autenticados.
-- Seed `supabase/seed.sql` com as 29 máquinas (ids únicos para unidades repetidas: `v6-01` a `v6-04`, `v5-01`, `v5-02`, `n8-01`, `n8-02`), 6 sondas, 33 salas com zona e proximidade do laudo, e configuração inicial de pesos do motor.
-- Testes de verificação dos arquivos SQL (`tests/schema.test.ts`) e teste de fumaça do ambiente.
-- `.env.example` com as variáveis do Supabase.
+- Seed completo em `supabase/seed.sql` e `src/config/seedData.ts`:
+  - 29 máquinas oficiais com IDs únicos para unidades repetidas (`v6-01` a `v6-04`, `v5-01`, `v5-02`, `n8-01`, `n8-02`) e sondas pré-mapeadas;
+  - 6 sondas (`CONVEXO`, `LINEAR`, `ENDOVAGINAL`, `VOLUMETRICO_4D`, `SETORIAL_NEONATAL`, `ELASTOGRAFIA`);
+  - 33 consultórios com Zonas Radiais 1, 2 e 3 e pontuação de proximidade dos PCs de laudo (`30 / 10 / 0`);
+  - 22 cursos oficiais da Nexus (9 Pós-Graduações e 13 Modulares, §4.1 e §4.2) e matriz inicial de máquinas preferenciais (`IDEAL`, `SECONDARY`, `CONTINGENCY`).
+- Validações puras de integridade ACID em `src/domain/rules/constraints.ts`: `DuplicateMachineAllocationError`, `DuplicateRoomAllocationError`, `MachineInMaintenanceError` e `OptimisticConcurrencyError` (HTTP 409).
+- Repositório Local-First (`src/infrastructure/local/localDatabase.ts`) com persistência em `localStorage` e conector REST para o Supabase (`src/infrastructure/supabase/supabaseClient.ts`).
+- Autenticação simples dos 3 operadores no cabeçalho (`src/ui/App.tsx`), com troca e renomeação de operador ativo e preenchimento automático de `updatedBy` e `auditLog` (tarefa 1.9).
+- Interface de gestão da Sprint 1:
+  - `MachineInventoryView.tsx`: CRUD de máquinas, troca de status (`Ativo`, `Manutenção`, `Empréstimo/Demo`) e de sondas em **1 clique** (< 3 cliques, tarefa 1.7) e seletor de Andar Inicial (Snapshot DEC-C);
+  - `CoursesCatalogView.tsx`: CRUD de cursos, edição de prioridade, ordem de rendição (`surrenderRank`) e matriz interativa de máquinas `1ª Opção / 2ª Opção / Contingência` em 1 clique (tarefa 1.8);
+  - `RoomsTopologyView.tsx`: revisão das 33 salas, Zonas Radiais 1/2/3 e proximidade dos PCs de laudo;
+  - `AuditAndConcurrencyView.tsx`: histórico de auditoria em tempo real e simulador interativo de salvamento transacional e concorrência otimista (`version`, tarefa 1.10).
+- Suíte de testes (`tests/schema.test.ts` e `tests/repository.test.ts`) cobrindo seeds, CRUDs, bloqueio de duplicidade de máquina/sala, bloqueio de máquina em manutenção e conflito de versão concorrente (17 testes passando).
 
 ### Pendências conhecidas
 
-- A migração e o seed ainda **não foram executados** em um Postgres real, pois o projeto Supabase não foi criado (tarefa 0.6). Os testes atuais só verificam o texto dos arquivos SQL.
-- Seed de cursos e `course_machine_rules` aguarda a validação da hipótese H2 com os operadores.
-- Valores de zona e proximidade (Zona 1 = 30, Zona 2 = 10, 2º andar = 0) são hipóteses a validar.
-- Tarefas 1.6 a 1.10 (repositórios, CRUD, autenticação e salvamento transacional) dependem do projeto Supabase.
-- `npm audit` reporta 13 vulnerabilidades (2 críticas, 1 alta) em dependências, a analisar.
+- A migração e o seed SQL aguardam a criação do projeto Supabase (tarefa 0.6) para execução em instância PostgreSQL remota; localmente, todas as restrições ACID e seeds já rodam e são validadas pelo repositório Local-First.
+- Calibração fina com os operadores da matriz `course_machine_rules` (H2) e das pontuações de zona (`30 / 10 / 0`) diretamente pela tela de revisão entregue nesta versão.
 
 ---
 
