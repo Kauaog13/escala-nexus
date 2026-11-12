@@ -31,9 +31,12 @@ import {
 } from '@/infrastructure/local/localDatabase';
 import {
   isSupabaseConfigured,
+  syncCatalogBatchToSupabase,
   syncCourseRuleToSupabase,
   syncCourseToSupabase,
+  syncEngineConfigToSupabase,
   syncMachineToSupabase,
+  syncRoomToSupabase,
   type SyncConnectionState,
 } from '@/infrastructure/supabase/supabaseClient';
 
@@ -123,6 +126,7 @@ export interface NexusAppStore extends NexusDatabaseState {
   ) => void;
   exportBackupJson: () => string;
   importBackupJson: (rawJson: string) => void;
+  syncNowWithSupabase: () => Promise<boolean>;
 
   saveShiftTransactional: (input: Omit<SaveShiftTransactionalInput, 'actor'>) => void;
   resetToSeed: () => void;
@@ -291,8 +295,16 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
   },
 
   updateRoom: (roomId, patch) => {
-    dbInstance.updateRoom(roomId, patch);
-    set(dbInstance.getSnapshot());
+    const saved = dbInstance.updateRoom(roomId, patch);
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
+    void syncRoomToSupabase(saved)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   generateWeekSchedule: () => {
@@ -649,12 +661,18 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
   },
 
   updateEngineWeights: (patch) => {
-    dbInstance.updateEngineConfig(patch);
+    const savedCfg = dbInstance.updateEngineConfig(patch);
     const elapsedMs = runWeekAllocationOnDb(dbInstance);
     set({
       ...dbInstance.getSnapshot(),
       lastCalculationMs: elapsedMs,
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
     });
+    void syncEngineConfigToSupabase(savedCfg)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   exportBackupJson: () => {
@@ -668,6 +686,27 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
     }
     dbInstance.replaceState(parsed, dbInstance.getCurrentOperator().name);
     set(dbInstance.getSnapshot());
+  },
+
+  syncNowWithSupabase: async () => {
+    if (!isSupabaseConfigured()) {
+      set({ syncState: 'LOCAL_ONLY' });
+      return false;
+    }
+    set({ syncState: 'PENDING_SYNC' });
+    const snap = dbInstance.getSnapshot();
+    try {
+      const ok = await syncCatalogBatchToSupabase({
+        machines: snap.machines,
+        rooms: snap.rooms,
+        courses: snap.courses,
+      });
+      set({ syncState: ok ? 'CLOUD_SYNCED' : 'PENDING_SYNC' });
+      return ok;
+    } catch {
+      set({ syncState: 'PENDING_SYNC' });
+      return false;
+    }
   },
 
   saveShiftTransactional: (input) => {

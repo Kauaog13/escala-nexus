@@ -30,6 +30,7 @@ export default function App() {
     syncState,
     switchOperator,
     renameOperator,
+    syncNowWithSupabase,
     resetToSeed,
   } = useNexusStore();
 
@@ -84,10 +85,15 @@ export default function App() {
 
           {/* Seletor de Operador Autenticado (Tarefa 1.9) + Status de Persistência (Tarefa 3.13) */}
           <div className="flex flex-wrap items-center gap-3">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+            <button
+              type="button"
+              onClick={() => {
+                void syncNowWithSupabase();
+              }}
+              title="Clique para sincronizar o catálogo e as configurações com o Supabase"
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
                 syncState === 'CLOUD_SYNCED'
-                  ? 'border-nexus-green bg-nexus-green-deep/40 text-nexus-green'
+                  ? 'border-nexus-green bg-nexus-green-deep/40 text-nexus-green hover:bg-nexus-green-deep/60'
                   : syncState === 'PENDING_SYNC'
                     ? 'border-nexus-amber bg-amber-950/50 text-amber-300'
                     : 'border-zinc-700 bg-nexus-surface text-zinc-300'
@@ -97,9 +103,9 @@ export default function App() {
               {syncState === 'CLOUD_SYNCED' && supabaseConnected
                 ? 'Sincronizado (Supabase Realtime)'
                 : syncState === 'PENDING_SYNC'
-                  ? 'Sincronizando na Nuvem...'
+                  ? 'Pendente de Sincronização (Clique p/ tentar)'
                   : 'Local-First (Offline-Ready)'}
-            </span>
+            </button>
 
             <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-nexus-surface px-2.5 py-1.5 text-xs">
               <UserCheck className="h-4 w-4 text-nexus-green" />

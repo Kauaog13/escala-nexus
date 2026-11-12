@@ -140,7 +140,11 @@
 - Escala completa em menos de 3 minutos.
 - As escalas reais de teste são reproduzidas, com divergências justificadas.
 
-## 8. Próximo passo
+## 8. Status das Sprints Implementadas
 
-Executar o **Sprint 0** (validação com os operadores) e, em paralelo, iniciar a tarefa 1.1 (scaffold do projeto).
+- [x] **Sprint 0:** Fixtures reais em `tests/fixtures/`, pesos e ordem de rendição em `src/config/seedData.ts`, operadores e `.env` configurados.
+- [x] **Sprint 1 (`v0.1.0`):** Scaffold React 18 + Vite 5 + TS 5 + Tailwind 3 + Zustand, migração SQL normalizada (`supabase/migrations/0001_schema.sql`), seeds oficiais (29 máquinas, 33 salas, 22 cursos), repositório Local-First + Supabase REST, CRUDs e salvamento transacional com concorrência otimista (`version`).
+- [x] **Sprint 2 (`v0.2.0`):** Motor determinístico puro em `src/domain/`, termos da função objetivo desacoplados (`w1..w4`), explicações em PT-BR, sugestor de salas por Zonas Radiais, proposta de menor mudança em quebra (`DEC-E`), suíte de testes unitários, golden, propriedade e perturbação (< 50 ms).
+- [x] **Sprint 3 (`v0.3.0` / `v0.5.0`):** Planejador por dia/turno (Segunda a Domingo + Dia Todo), grade e planta radial interativa (`FloorMapContainer.tsx`) com Drag-and-Drop, Pin, Hot-Swap com permuta automática (`RN10`), Quarentena (`DEC-E`), relatório de transição entre turnos (`RF06`), exportador oficial WhatsApp (`RF07`) e clonagem de escala com herança de andar (`RF08` / `DEC-C`).
+- [x] **Sprint 4 (`v0.4.0` / `v0.5.0`):** Telemetria Kaizen, calibração de pesos em tempo real, histórico de versões, backup/restore `.json` e manual rápido do operador (`docs/manual-operador-escala-nexus.md`).
 

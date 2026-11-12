@@ -76,6 +76,27 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ---
 
+## [v0.5.1] - 2026-11-12
+
+Consolidação da suíte de testes de propriedade e perturbação, fixtures reais de fins de semana, sincronização sob demanda com Supabase e fechamento das Sprints 0 a 4.
+
+### Adicionado
+
+- **Fixtures Reais de Fins de Semana (`tests/fixtures/` — Tarefas 0.4 e 2.13):**
+  - Adicionados `tests/fixtures/fds-23-25-ecof-mefe-giob.json` e `tests/fixtures/whatsapp-expected-fds-23-25.txt` contendo o cenário golden oficial de conflito triplo no sábado de manhã (`ECOF + MEFE + GIOB = 23 salas`) e transição com descida do GIOB no sábado à tarde.
+- **Suíte de Testes de Propriedade, Perturbação e Casos de Borda (`tests/property-perturbation.test.ts` — Tarefa 2.14 e §5.6):**
+  - **Invariante RN10:** 30 simulações combinatórias pseudoaleatórias com semente determinística garantindo zero duplicatas de máquina ou consultório no turno;
+  - **Perturbação Controlada:** simulação de quebra do Voluson Signature substituindo exatamente 1 equipamento do turno;
+  - **Semana de Movimento Zero (§5.6):** garantia de 0 transportes entre andares e 100% de salas herdadas quando a demanda é contínua;
+  - **Validação de Performance (H7):** execução da escala completa a partir de fixtures em `< 50 ms`.
+- **Sincronização em Lote e Sob Demanda com Supabase REST (`src/infrastructure/supabase/supabaseClient.ts` e `src/application/store.ts` — Tarefas 1.6 e 3.13):**
+  - Implementadas as funções `syncCatalogBatchToSupabase`, `syncRoomToSupabase`, `syncEngineConfigToSupabase` e a ação `syncNowWithSupabase`;
+  - Botão interativo no cabeçalho (`src/ui/App.tsx`) permitindo forçar a sincronização de catálogo, consultórios e pesos com o Supabase com feedback visual imediato de status (`Sincronizado`, `Pendente`, `Local-Only`).
+- **Atualização do Roadmap e Documentos:**
+  - Status de conclusão de todas as sprints (0 a 4) registrado em `docs/design-escala-nexus.md` e `docs/plano-implementacao-escala-nexus.md`. Total de 35 testes passando nas 6 suítes.
+
+---
+
 ## [v0.5.0] - 2026-11-12
 
 Refinamentos finais das Sprints 3 e 4: planta radial interativa, drag-and-drop, turnos flexíveis, regime dia todo, clonagem com herança e manual do operador.

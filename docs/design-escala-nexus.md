@@ -1,7 +1,7 @@
 # Design Validado — Escala Nexus
 
 **Origem:** `docs/analise-requisitos-escala-nexus.md` (v4.0) + skill `brainstorming` (Understanding Lock, abordagens, design incremental, Decision Log).
-**Status:** design validado seção a seção pelo usuário. Implementação ainda **não** iniciada.
+**Status:** design validado seção a seção pelo usuário e implementado integralmente (Sprints 1 a 4 — `v0.5.0`).
 
 ---
 
