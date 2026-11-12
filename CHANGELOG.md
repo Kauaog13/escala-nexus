@@ -76,7 +76,30 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ---
 
-## [v0.5.2] - 2026-11-12
+## [v0.5.3] - 2026-11-12
+
+Refatoração de desacoplamento da herança de salas por curso no motor (RN06), snapshots reais e rollback de versões (RF08 e RN11), resolução guiada de concorrência otimista (409) e manual interativo na UI.
+
+### Adicionado
+
+- **Rollback e Restauração de Versões Anteriores (`RF08` e `RN11`):**
+  - Armazenamento de snapshots completos de alocações e explicações em `ScheduleVersionRecord` (`src/infrastructure/local/localDatabase.ts`);
+  - Método `restoreScheduleVersion(versionId)` no banco local e exposto na store Zustand (`src/application/store.ts`);
+  - Botão de restauração com badge e data formatada na tabela de versões em `src/ui/components/AuditAndConcurrencyView.tsx`;
+  - Teste de integração de rollback validado na suíte de workflow (`tests/operator-workflow.test.ts`).
+- **Resolução Guiada de Conflito Concorrente (`src/ui/components/AuditAndConcurrencyView.tsx` — §5.6):**
+  - Banner dinâmico com ações guiadas em caso de erro 409 (`OptimisticConcurrencyError`): "Recarregar Versão Atual" e "Mesclar e Forçar Sobrescrita", preservando autonomia do operador sem travamentos.
+- **Modal Interativa de Ajuda e Manual Rápido (`src/ui/components/HelpModal.tsx` e `src/ui/App.tsx`):**
+  - Modal acessível no cabeçalho contendo resumo dos 4 passos operacionais (Inventário, Lançamento de Turmas com blocos sugeridos, Ajustes finos com detecção de permuta anti-colisão e Exportação WhatsApp com cópia em 1 clique);
+  - Guia de atalhos e boas práticas de transição entre andares.
+- **Auditoria de Conformidade das Sprints (`docs/plano-implementacao-escala-nexus.md`):**
+  - Mapeamento exaustivo do status de implementação das Sprints 0, 1, 2, 3 e 4, formalizando 100% de cobertura de código para todas as regras de negócio (`RN01` a `RN11`) e decisões arquiteturais (`DEC-A` a `DEC-F`).
+
+### Alterado
+
+- **Desacoplamento Determinístico da Herança de Salas (`RN06` em `src/domain/engine/allocate.ts` e `src/domain/types/index.ts`):**
+  - Adicionado campo opcional `previousDemands?: ShiftDemand[]` em `ShiftAllocationInput` e propagado em `allocateWeek`;
+  - `allocateShift` agora mapeia o vínculo curso-demanda em $O(1)$ determinístico (`prevCourseByDemandId`), eliminando a heurística frágil anterior de busca por prefixo textual no identificador da demanda. Mantida pureza arquitetural estrita (`DEC-F`) com zero imports de UI/infraestrutura.
 
 Visualização de diff no recálculo da escala (§5.5), suíte de testes de workflow do operador (Seção 5), pipeline de CI e documentação do repositório.
 

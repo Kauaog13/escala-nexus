@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarCheck2,
   Database,
+  HelpCircle,
   RotateCcw,
   ShieldCheck,
   UserCheck,
@@ -12,6 +13,7 @@ import {
 import { useNexusStore } from '@/application/store';
 import { AuditAndConcurrencyView } from './components/AuditAndConcurrencyView';
 import { CoursesCatalogView } from './components/CoursesCatalogView';
+import { HelpModal } from './components/HelpModal';
 import { MachineInventoryView } from './components/MachineInventoryView';
 import { RoomsTopologyView } from './components/RoomsTopologyView';
 import { SchedulePlannerBoard } from './components/SchedulePlannerBoard';
@@ -37,6 +39,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('PLANNER');
   const [editingOperator, setEditingOperator] = useState(false);
   const [operatorDraftName, setOperatorDraftName] = useState('');
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   const currentOperator =
     operators.find((op) => op.id === currentOperatorId) ?? operators[0];
@@ -155,6 +158,15 @@ export default function App() {
               className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-nexus-surface px-2.5 py-1.5 text-xs text-zinc-300 hover:border-nexus-green hover:text-nexus-white"
             >
               <RotateCcw className="h-3.5 w-3.5" /> Restaurar Seed
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowHelpModal(true)}
+              title="Abrir o Manual Rápido do Operador (5 minutos)"
+              className="inline-flex items-center gap-1.5 rounded-md border border-nexus-green bg-nexus-green/10 px-3 py-1.5 text-xs font-semibold text-nexus-green hover:bg-nexus-green hover:text-white transition"
+            >
+              <HelpCircle className="h-4 w-4" /> Ajuda / Manual
             </button>
           </div>
         </div>
@@ -281,6 +293,8 @@ export default function App() {
         {activeTab === 'COURSES' && <CoursesCatalogView />}
         {activeTab === 'TOPOLOGY' && <RoomsTopologyView />}
         {activeTab === 'AUDIT' && <AuditAndConcurrencyView />}
+
+        <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
       </main>
     </div>
   );

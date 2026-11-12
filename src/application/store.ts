@@ -138,6 +138,7 @@ export interface NexusAppStore extends NexusDatabaseState {
   ) => void;
   exportBackupJson: () => string;
   importBackupJson: (rawJson: string) => void;
+  restoreScheduleVersion: (versionId: string) => void;
   syncNowWithSupabase: () => Promise<boolean>;
 
   saveShiftTransactional: (input: Omit<SaveShiftTransactionalInput, 'actor'>) => void;
@@ -743,6 +744,20 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
     }
     dbInstance.replaceState(parsed, dbInstance.getCurrentOperator().name);
     set(dbInstance.getSnapshot());
+  },
+
+  restoreScheduleVersion: (versionId) => {
+    const snap = dbInstance.getSnapshot();
+    const undoEntry: UndoHistoryEntry = {
+      allocations: snap.allocations,
+      explanations: snap.explanations,
+      manualLocks: snap.manualLocks,
+    };
+    dbInstance.restoreScheduleVersion(versionId);
+    set({
+      ...dbInstance.getSnapshot(),
+      undoStack: [undoEntry, ...get().undoStack.slice(0, 19)],
+    });
   },
 
   syncNowWithSupabase: async () => {

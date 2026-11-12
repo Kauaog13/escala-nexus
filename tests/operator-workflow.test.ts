@@ -95,6 +95,18 @@ describe('Seção 5 do Plano — Fluxo Completo do Operador: Gerar, Intervir, Pe
 
     expect(whatsapp).toContain('*2° ANDAR*');
     expect(whatsapp).toContain('MANUTENÇÃO');
+
+    // Restaura a versão Oficial Publicada anterior (Rollback — RF08)
+    const publishedVersion = afterQuarantine.scheduleVersions.find((v) =>
+      v.label.includes('Oficial Publicada'),
+    );
+    expect(publishedVersion).toBeDefined();
+    afterQuarantine.restoreScheduleVersion(publishedVersion!.id);
+
+    const restoredAlloc = useNexusStore
+      .getState()
+      .allocations.find((a) => a.shiftId === shiftId && a.roomId === '1A-17');
+    expect(restoredAlloc?.machineId).toBe(targetAlloc.machineId);
   });
 });
 

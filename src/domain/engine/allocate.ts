@@ -64,12 +64,25 @@ export function allocateShift(input: ShiftAllocationInput): ShiftAllocationResul
   // Salas que cada curso ocupou no turno imediatamente anterior (RN06)
   const previousRoomsByCourse = new Map<string, string[]>();
   if (input.previousAllocations) {
+    const prevCourseByDemandId = new Map<string, string>(
+      (input.previousDemands ?? []).map((d) => [d.id, d.courseId]),
+    );
     for (const prevAlloc of input.previousAllocations) {
       const prevRoom = roomsById.get(prevAlloc.roomId);
       if (!prevRoom) continue;
-      // Descobre o curso pela explicação ou pelo demandId/courseId embutido
+
+      const explicitCourseId = prevCourseByDemandId.get(prevAlloc.demandId);
+      if (explicitCourseId) {
+        const list = previousRoomsByCourse.get(explicitCourseId) ?? [];
+        list.push(prevAlloc.roomId);
+        previousRoomsByCourse.set(explicitCourseId, list);
+        continue;
+      }
+
+      // Fallback determinístico quando previousDemands não é informado isoladamente
       for (const d of input.demands) {
-        if (prevAlloc.demandId.includes(d.courseId) || prevAlloc.id.includes(d.courseId)) {
+        const expectedPrefix = `alloc-${prevAlloc.shiftId}-${d.courseId}-`;
+        if (prevAlloc.id.startsWith(expectedPrefix) || prevAlloc.demandId === d.id) {
           const list = previousRoomsByCourse.get(d.courseId) ?? [];
           list.push(prevAlloc.roomId);
           previousRoomsByCourse.set(d.courseId, list);
@@ -631,6 +644,7 @@ export function allocateWeek(input: WeekAllocationInput): WeekAllocationResult {
   const resultsByShiftId: Record<string, ShiftAllocationResult> = {};
   let currentFloors: Record<string, FloorNumber> = { ...input.initialMachineFloors };
   let previousAllocations: Allocation[] | undefined = undefined;
+  let previousDemands: ShiftDemand[] | undefined = undefined;
   let totalFloorMoves = 0;
   const footerNotes: string[] = [];
 
@@ -649,6 +663,7 @@ export function allocateWeek(input: WeekAllocationInput): WeekAllocationResult {
       manualLocks,
       disabledRoomIds,
       previousAllocations,
+      previousDemands,
       previousMachineFloors: currentFloors,
       config: input.config,
     });
@@ -674,6 +689,7 @@ export function allocateWeek(input: WeekAllocationInput): WeekAllocationResult {
     currentFloors = result.updatedMachineFloors;
     if (result.allocations.length > 0) {
       previousAllocations = result.allocations;
+      previousDemands = demands;
     }
   }
 

@@ -43,6 +43,8 @@ export interface ScheduleVersionRecord {
   createdAt: string;
   allocationsCount: number;
   footerNote: string;
+  snapshotAllocations?: Allocation[];
+  snapshotExplanations?: AllocationExplanation[];
 }
 
 export interface NexusDatabaseState {
@@ -741,6 +743,8 @@ export class LocalNexusDatabase {
       createdAt: new Date().toISOString(),
       allocationsCount: this.state.allocations.length,
       footerNote: currentSchedule.footerNote,
+      snapshotAllocations: structuredClone(this.state.allocations),
+      snapshotExplanations: structuredClone(this.state.explanations),
     });
 
     // DEC-C & RF08: herda o andar final onde cada máquina terminou na última escala como initialFloors da nova semana
@@ -835,11 +839,39 @@ export class LocalNexusDatabase {
         createdAt: new Date().toISOString(),
         allocationsCount: this.state.allocations.length,
         footerNote: schedule.footerNote,
+        snapshotAllocations: structuredClone(this.state.allocations),
+        snapshotExplanations: structuredClone(this.state.explanations),
       });
     }
 
     this.appendAudit(operatorName, 'SCHEDULE_METADATA_UPDATED', patch, schedule.id);
     this.persist();
+  }
+
+  restoreScheduleVersion(versionId: string, actor?: string): ScheduleVersionRecord {
+    const operatorName = actor ?? this.getCurrentOperator().name;
+    const version = this.state.scheduleVersions.find((v) => v.id === versionId);
+    if (!version) {
+      throw new Error(`Versão '${versionId}' não encontrada no histórico.`);
+    }
+    if (version.snapshotAllocations) {
+      this.state.allocations = structuredClone(version.snapshotAllocations);
+    }
+    if (version.snapshotExplanations) {
+      this.state.explanations = structuredClone(version.snapshotExplanations);
+    }
+    const schedule = this.state.schedules[0];
+    if (schedule) {
+      schedule.footerNote = version.footerNote;
+      schedule.updatedBy = operatorName;
+      schedule.updatedAt = new Date().toISOString();
+    }
+    this.appendAudit(operatorName, 'SCHEDULE_VERSION_RESTORED', {
+      versionId: version.id,
+      label: version.label,
+    });
+    this.persist();
+    return structuredClone(version);
   }
 
   updateEngineConfig(

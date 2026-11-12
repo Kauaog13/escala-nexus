@@ -228,6 +228,7 @@ export interface ShiftAllocationInput {
   manualLocks: ManualLock[];
   disabledRoomIds?: string[];
   previousAllocations?: Allocation[];
+  previousDemands?: ShiftDemand[];
   previousMachineFloors: Record<string, FloorNumber>;
   config: EngineConfig;
 }

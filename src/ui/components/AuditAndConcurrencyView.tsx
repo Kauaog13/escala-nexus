@@ -27,14 +27,17 @@ export function AuditAndConcurrencyView() {
     updateEngineWeights,
     exportBackupJson,
     importBackupJson,
+    restoreScheduleVersion,
   } = useNexusStore();
 
   const [selectedShiftId, setSelectedShiftId] = useState(
     shifts[2]?.id ?? shifts[0]?.id ?? 'shift-sabado-manha',
   );
-  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; message: string } | null>(
-    null,
-  );
+  const [feedback, setFeedback] = useState<{
+    type: 'ok' | 'err';
+    message: string;
+    isVersionConflict?: boolean;
+  } | null>(null);
   const [importText, setImportText] = useState('');
   const [showImportBox, setShowImportBox] = useState(false);
 
@@ -118,6 +121,7 @@ export function AuditAndConcurrencyView() {
       setFeedback({
         type: 'err',
         message: err instanceof Error ? err.message : 'Conflito detectado.',
+        isVersionConflict: true,
       });
     }
   }
@@ -376,11 +380,28 @@ export function AuditAndConcurrencyView() {
             {scheduleVersions.map((ver) => (
               <div
                 key={ver.id}
-                className="rounded border border-nexus-border bg-zinc-50 px-3 py-1.5"
+                className="flex items-center gap-2 rounded border border-nexus-border bg-zinc-50 px-3 py-1.5"
               >
-                <span className="font-semibold text-nexus-black">{ver.label}</span> •{' '}
-                <span className="text-zinc-600">{ver.createdBy}</span> ({ver.allocationsCount}{' '}
-                alocações)
+                <div>
+                  <span className="font-semibold text-nexus-black">{ver.label}</span> •{' '}
+                  <span className="text-zinc-600">{ver.createdBy}</span> ({ver.allocationsCount}{' '}
+                  alocações)
+                </div>
+                {ver.snapshotAllocations && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      restoreScheduleVersion(ver.id);
+                      setFeedback({
+                        type: 'ok',
+                        message: `Versão "${ver.label}" restaurada com sucesso!`,
+                      });
+                    }}
+                    className="rounded bg-nexus-black px-2 py-0.5 text-[11px] font-medium text-white hover:bg-nexus-surface"
+                  >
+                    Restaurar
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -440,18 +461,45 @@ export function AuditAndConcurrencyView() {
 
         {feedback && (
           <div
-            className={`mt-3 flex items-center gap-2 rounded border p-2.5 text-xs ${
+            className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded border p-2.5 text-xs ${
               feedback.type === 'ok'
                 ? 'border-nexus-green bg-nexus-green-light text-nexus-green-deep'
                 : 'border-nexus-red bg-red-50 text-red-900'
             }`}
           >
-            {feedback.type === 'ok' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-            ) : (
-              <AlertOctagon className="h-4 w-4 shrink-0" />
+            <div className="flex items-center gap-2">
+              {feedback.type === 'ok' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertOctagon className="h-4 w-4 shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+
+            {feedback.isVersionConflict && selectedShift && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFeedback({
+                      type: 'ok',
+                      message: `Versão v${selectedShift.version} do turno ${selectedShift.label} recarregada com sucesso (§5.6).`,
+                    })
+                  }
+                  className="rounded border border-red-300 bg-white px-2.5 py-1 font-medium text-red-900 hover:bg-red-100"
+                >
+                  Recarregar Versão Atual (v{selectedShift.version})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleValidCommit}
+                  className="rounded bg-nexus-black px-2.5 py-1 font-semibold text-white hover:bg-nexus-surface"
+                >
+                  Mesclar e Forçar Sobrescrita (v{selectedShift.version} → v
+                  {selectedShift.version + 1})
+                </button>
+              </div>
             )}
-            <span>{feedback.message}</span>
           </div>
         )}
       </div>
