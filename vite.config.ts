@@ -5,8 +5,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
-  // Expõe apenas prefixos seguros ao cliente (VITE_). Chaves secretas sem prefixo VITE_ nunca vão para o bundle.
-  envPrefix: ['VITE_'],
+  // Expõe apenas variáveis públicas ao cliente. SUPABASE_SECRET_KEY nunca vai para o bundle.
+  envPrefix: ['VITE_', 'SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

@@ -10,37 +10,149 @@ import type {
 export interface SupabaseConnectionConfig {
   url: string;
   anonKey: string;
+  projectRef: string | null;
+  sqlEditorUrl: string;
 }
 
-export type SyncConnectionState = 'CLOUD_SYNCED' | 'PENDING_SYNC' | 'LOCAL_ONLY';
+export type SyncConnectionState =
+  | 'CLOUD_SYNCED'
+  | 'SCHEMA_MISSING'
+  | 'PENDING_SYNC'
+  | 'LOCAL_ONLY';
+
+export interface SupabaseSyncDiagnosis {
+  ok: boolean;
+  state: SyncConnectionState;
+  message: string;
+}
+
+// Cache leve em memória para evitar chamadas redundantes quando o schema ainda não foi criado
+let cachedSchemaState: 'UNKNOWN' | 'READY' | 'MISSING' = 'UNKNOWN';
+
+export function resetSupabaseSchemaCache(): void {
+  cachedSchemaState = 'UNKNOWN';
+}
 
 export function getSupabaseConfig(): SupabaseConnectionConfig | null {
-  const url = import.meta.env?.VITE_SUPABASE_URL?.trim() ?? '';
-  const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
-  if (!url || !anonKey) {
+  const env = (import.meta.env ?? {}) as Record<string, string | undefined>;
+  const rawUrl = (env.VITE_SUPABASE_URL ?? env.SUPABASE_URL ?? '').trim();
+  const rawKey = (
+    env.VITE_SUPABASE_ANON_KEY ??
+    env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+    env.SUPABASE_PUBLISHABLE_KEY ??
+    ''
+  ).trim();
+
+  if (!rawUrl || !rawKey) {
     return null;
   }
-  return { url: url.replace(/\/+$/, ''), anonKey };
+
+  const url = rawUrl.replace(/\/+$/, '');
+  const refMatch = url.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co$/i);
+  const projectRef = refMatch?.[1] ?? null;
+  const sqlEditorUrl = projectRef
+    ? `https://supabase.com/dashboard/project/${projectRef}/sql/new`
+    : 'https://supabase.com/dashboard';
+
+  return {
+    url,
+    anonKey: rawKey,
+    projectRef,
+    sqlEditorUrl,
+  };
 }
 
 export function isSupabaseConfigured(): boolean {
   return getSupabaseConfig() !== null;
 }
 
-function buildHeaders(anonKey: string): Record<string, string> {
-  return {
+function buildHeaders(anonKey: string, includeMergePrefer = true): Record<string, string> {
+  const headers: Record<string, string> = {
     apikey: anonKey,
-    Authorization: `Bearer ${anonKey}`,
     'Content-Type': 'application/json',
-    Prefer: 'resolution=merge-duplicates,return=representation',
   };
+
+  // Chaves JWT legadas (eyJ...) exigem Authorization Bearer; chaves sb_publishable_ usam apikey diretamente
+  if (anonKey.startsWith('eyJ')) {
+    headers.Authorization = `Bearer ${anonKey}`;
+  }
+
+  if (includeMergePrefer) {
+    headers.Prefer = 'resolution=merge-duplicates,return=minimal';
+  }
+
+  return headers;
+}
+
+export async function checkSupabaseSchemaHealth(
+  forceCheck = false,
+): Promise<SupabaseSyncDiagnosis> {
+  const cfg = getSupabaseConfig();
+  if (!cfg) {
+    return {
+      ok: false,
+      state: 'LOCAL_ONLY',
+      message: 'Credenciais do Supabase não configuradas (.env.local). Operando em modo Local-First.',
+    };
+  }
+
+  if (!forceCheck && cachedSchemaState === 'MISSING') {
+    return {
+      ok: false,
+      state: 'SCHEMA_MISSING',
+      message:
+        'Projeto Supabase conectado, porém as tabelas (machines, rooms, courses) ainda não foram criadas no banco.',
+    };
+  }
+
+  try {
+    const response = await fetch(`${cfg.url}/rest/v1/machines?select=id&limit=1`, {
+      method: 'GET',
+      headers: buildHeaders(cfg.anonKey, false),
+    });
+
+    if (response.ok) {
+      cachedSchemaState = 'READY';
+      return {
+        ok: true,
+        state: 'CLOUD_SYNCED',
+        message: 'Conectado e sincronizado com o banco Supabase.',
+      };
+    }
+
+    const bodyText = await response.text().catch(() => '');
+    if (response.status === 404 || bodyText.includes('PGRST205')) {
+      cachedSchemaState = 'MISSING';
+      return {
+        ok: false,
+        state: 'SCHEMA_MISSING',
+        message:
+          'Tabelas ainda não encontradas no projeto Supabase (PGRST205). Execute o script SQL de inicialização.',
+      };
+    }
+
+    return {
+      ok: false,
+      state: 'PENDING_SYNC',
+      message: `Erro HTTP ${response.status} ao verificar o Supabase: ${bodyText.slice(0, 120)}`,
+    };
+  } catch {
+    return {
+      ok: false,
+      state: 'PENDING_SYNC',
+      message: 'Sem conexão de rede com o Supabase no momento.',
+    };
+  }
 }
 
 export async function syncMachineToSupabase(machine: Machine): Promise<boolean> {
   const cfg = getSupabaseConfig();
   if (!cfg) return false;
 
-  const response = await fetch(`${cfg.url}/rest/v1/machines`, {
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) return false;
+
+  const response = await fetch(`${cfg.url}/rest/v1/machines?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify({
@@ -64,7 +176,10 @@ export async function syncCourseToSupabase(course: Course): Promise<boolean> {
   const cfg = getSupabaseConfig();
   if (!cfg) return false;
 
-  const response = await fetch(`${cfg.url}/rest/v1/courses`, {
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) return false;
+
+  const response = await fetch(`${cfg.url}/rest/v1/courses?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify({
@@ -86,15 +201,21 @@ export async function syncCourseRuleToSupabase(rule: CourseMachineRule): Promise
   const cfg = getSupabaseConfig();
   if (!cfg) return false;
 
-  const response = await fetch(`${cfg.url}/rest/v1/course_machine_rules`, {
-    method: 'POST',
-    headers: buildHeaders(cfg.anonKey),
-    body: JSON.stringify({
-      course_id: rule.courseId,
-      machine_id: rule.machineId,
-      quality: rule.quality,
-    }),
-  });
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) return false;
+
+  const response = await fetch(
+    `${cfg.url}/rest/v1/course_machine_rules?on_conflict=course_id,machine_id`,
+    {
+      method: 'POST',
+      headers: buildHeaders(cfg.anonKey),
+      body: JSON.stringify({
+        course_id: rule.courseId,
+        machine_id: rule.machineId,
+        quality: rule.quality,
+      }),
+    },
+  );
   return response.ok;
 }
 
@@ -102,7 +223,10 @@ export async function syncRoomToSupabase(room: ConsultingRoom): Promise<boolean>
   const cfg = getSupabaseConfig();
   if (!cfg) return false;
 
-  const response = await fetch(`${cfg.url}/rest/v1/rooms`, {
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) return false;
+
+  const response = await fetch(`${cfg.url}/rest/v1/rooms?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify({
@@ -122,7 +246,10 @@ export async function syncEngineConfigToSupabase(config: EngineConfig): Promise<
   const cfg = getSupabaseConfig();
   if (!cfg) return false;
 
-  const response = await fetch(`${cfg.url}/rest/v1/engine_config`, {
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) return false;
+
+  const response = await fetch(`${cfg.url}/rest/v1/engine_config?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify({
@@ -141,11 +268,24 @@ export async function syncCatalogBatchToSupabase(payload: {
   machines: Machine[];
   rooms: ConsultingRoom[];
   courses: Course[];
-}): Promise<boolean> {
+  courseRules?: CourseMachineRule[];
+}): Promise<SupabaseSyncDiagnosis> {
   const cfg = getSupabaseConfig();
-  if (!cfg) return false;
+  if (!cfg) {
+    return {
+      ok: false,
+      state: 'LOCAL_ONLY',
+      message: 'Supabase não configurado.',
+    };
+  }
 
-  const machinesRes = await fetch(`${cfg.url}/rest/v1/machines`, {
+  // Verifica se as tabelas existem antes de disparar os POSTs em lote (evita 404 PGRST205 no console)
+  const health = await checkSupabaseSchemaHealth(true);
+  if (!health.ok) {
+    return health;
+  }
+
+  const machinesRes = await fetch(`${cfg.url}/rest/v1/machines?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify(
@@ -165,7 +305,7 @@ export async function syncCatalogBatchToSupabase(payload: {
     ),
   });
 
-  const roomsRes = await fetch(`${cfg.url}/rest/v1/rooms`, {
+  const roomsRes = await fetch(`${cfg.url}/rest/v1/rooms?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify(
@@ -181,7 +321,7 @@ export async function syncCatalogBatchToSupabase(payload: {
     ),
   });
 
-  const coursesRes = await fetch(`${cfg.url}/rest/v1/courses`, {
+  const coursesRes = await fetch(`${cfg.url}/rest/v1/courses?on_conflict=id`, {
     method: 'POST',
     headers: buildHeaders(cfg.anonKey),
     body: JSON.stringify(
@@ -199,7 +339,33 @@ export async function syncCatalogBatchToSupabase(payload: {
     ),
   });
 
-  return machinesRes.ok && roomsRes.ok && coursesRes.ok;
+  let rulesOk = true;
+  if (payload.courseRules && payload.courseRules.length > 0) {
+    const rulesRes = await fetch(
+      `${cfg.url}/rest/v1/course_machine_rules?on_conflict=course_id,machine_id`,
+      {
+        method: 'POST',
+        headers: buildHeaders(cfg.anonKey),
+        body: JSON.stringify(
+          payload.courseRules.map((rule) => ({
+            course_id: rule.courseId,
+            machine_id: rule.machineId,
+            quality: rule.quality,
+          })),
+        ),
+      },
+    );
+    rulesOk = rulesRes.ok;
+  }
+
+  const allOk = machinesRes.ok && roomsRes.ok && coursesRes.ok && rulesOk;
+  return {
+    ok: allOk,
+    state: allOk ? 'CLOUD_SYNCED' : 'PENDING_SYNC',
+    message: allOk
+      ? 'Catálogo (29 máquinas, 33 salas, 22 cursos e regras) sincronizado com sucesso no Supabase!'
+      : 'Algumas tabelas rejeitaram a escrita (verifique as políticas RLS no Supabase).',
+  };
 }
 
 export async function callBumpShiftVersionRpc(
@@ -211,9 +377,14 @@ export async function callBumpShiftVersionRpc(
     return expectedVersion + 1;
   }
 
+  const health = await checkSupabaseSchemaHealth();
+  if (!health.ok) {
+    return expectedVersion + 1;
+  }
+
   const response = await fetch(`${cfg.url}/rest/v1/rpc/bump_shift_version`, {
     method: 'POST',
-    headers: buildHeaders(cfg.anonKey),
+    headers: buildHeaders(cfg.anonKey, false),
     body: JSON.stringify({
       p_shift_id: shiftId,
       p_expected_version: expectedVersion,

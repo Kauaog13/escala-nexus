@@ -30,7 +30,8 @@ INSERT INTO machines (id, code, internal_label, brand, family, tier, mobility) V
   ('p12-elite',   'P12 ELITE',   'P12 ELITE',   'SonoScape', 'ELITE',     2, 'MEDIUM'),
   ('vinno-e35',   'VINNO E35',   'VINNO E35',   'Vinno',     'VINNO',     2, 'LIGHT'),
   ('vinno-e20',   'VINNO E20',   'VINNO E20',   'Vinno',     'VINNO',     3, 'LIGHT'),
-  ('hm70',        'HM70',        'HM70',        'Samsung',   'PORTATIL',  3, 'PORTABLE');
+  ('hm70',        'HM70',        'HM70',        'Samsung',   'PORTATIL',  3, 'PORTABLE')
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO probes (id, label) VALUES
   ('CONVEXO',           'Convexo'),
@@ -38,7 +39,8 @@ INSERT INTO probes (id, label) VALUES
   ('ENDOVAGINAL',       'Endovaginal'),
   ('VOLUMETRICO_4D',    'Volumétrico 3D/4D'),
   ('SETORIAL_NEONATAL', 'Setorial Adulto/Neonatal'),
-  ('ELASTOGRAFIA',      'Elastografia');
+  ('ELASTOGRAFIA',      'Elastografia')
+ON CONFLICT (id) DO NOTHING;
 
 -- 1º andar: Zona 1 = salas 5-8 e 11-18 (proximidade 30); Zona 2 = demais (10).
 INSERT INTO rooms (id, floor, room_number, zone, report_proximity, corridor_group)
@@ -51,7 +53,8 @@ SELECT format('1A-%s', lpad(n::text, 2, '0')),
             THEN 'Zona 1 - Núcleo Próximo ao Laudo'
             ELSE 'Zona 2 - Periferia 1º Andar'
        END
-FROM generate_series(1, 23) AS n;
+FROM generate_series(1, 23) AS n
+ON CONFLICT (id) DO NOTHING;
 
 -- 2º andar: Zona 3 (apoio), proximidade 0.
 INSERT INTO rooms (id, floor, room_number, zone, report_proximity, corridor_group)
@@ -61,7 +64,8 @@ SELECT format('2A-%s', lpad(n::text, 2, '0')),
        3,
        0,
        'Zona 3 - Expansão 2º Andar'
-FROM generate_series(1, 10) AS n;
+FROM generate_series(1, 10) AS n
+ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- Catálogo Oficial de Cursos (§4.1 Pós-Graduação e §4.2 Modulares)
@@ -90,7 +94,8 @@ INSERT INTO courses (id, short_name, full_name, type, workload_hours, priority_l
   ('mod-parede-abdominal',     'Parede Abdominal, Inguinal e Bolsa Testicular', 'Parede Abdominal, Inguinal e Bolsa Testicular','MODULAR',  30, 2, FALSE, NULL, 17),
   ('mod-puncao-vascular',      'Punção Vascular Ecoguiada',           'Punção Vascular Ecoguiada',                              'MODULAR',  10, 2, TRUE,  'Operador escolhe entre Portáteis (Logiq E, HM70) ou Fixos Lineares', 18),
   ('mod-pocus-go',             'Point-of-Care: Urgências / POCUS em GO', 'Point-of-Care: Urgências / POCUS em GO',              'MODULAR',  30, 2, TRUE,  'Operador define proporção entre Portáteis e Linha V / Voluson Base', 19),
-  ('mod-basico-giob',          'Básico em Ginecologia e Obstetrícia', 'Curso Básico em Ginecologia e Obstetrícia',              'MODULAR',  60, 3, FALSE, NULL, 21);
+  ('mod-basico-giob',          'Básico em Ginecologia e Obstetrícia', 'Curso Básico em Ginecologia e Obstetrícia',              'MODULAR',  60, 3, FALSE, NULL, 21)
+ON CONFLICT (id) DO NOTHING;
 
 -- Regras iniciais de máquinas por curso (1ª opção IDEAL, 2ª opção SECONDARY, CONTINGENCY)
 INSERT INTO course_machine_rules (course_id, machine_id, quality) VALUES
@@ -111,6 +116,8 @@ INSERT INTO course_machine_rules (course_id, machine_id, quality) VALUES
   ('pg-us-giob', 'v6-01', 'IDEAL'), ('pg-us-giob', 'v6-02', 'IDEAL'), ('pg-us-giob', 'v6-03', 'IDEAL'), ('pg-us-giob', 'v6-04', 'IDEAL'),
   ('pg-us-giob', 'v5-01', 'IDEAL'), ('pg-us-giob', 'v5-02', 'IDEAL'), ('pg-us-giob', 'v4', 'IDEAL'),
   ('pg-us-giob', 'p12-elite', 'CONTINGENCY'), ('pg-us-giob', 'p9', 'CONTINGENCY'), ('pg-us-giob', 'canon', 'CONTINGENCY'),
-  ('pg-us-giob', 'n8-01', 'CONTINGENCY'), ('pg-us-giob', 'n8-02', 'CONTINGENCY'), ('pg-us-giob', 'hm70', 'CONTINGENCY');
+  ('pg-us-giob', 'n8-01', 'CONTINGENCY'), ('pg-us-giob', 'n8-02', 'CONTINGENCY'), ('pg-us-giob', 'hm70', 'CONTINGENCY')
+ON CONFLICT (course_id, machine_id) DO NOTHING;
 
 INSERT INTO engine_config DEFAULT VALUES;
+NOTIFY pgrst, 'reload schema';

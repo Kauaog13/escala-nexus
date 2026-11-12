@@ -4,7 +4,7 @@
 -- ---------------------------------------------------------------------------
 -- Inventário
 -- ---------------------------------------------------------------------------
-CREATE TABLE machines (
+CREATE TABLE IF NOT EXISTS machines (
   id             TEXT PRIMARY KEY,                 -- ex.: 'v6-01'
   code           TEXT NOT NULL,                    -- nome exibido no WhatsApp: 'V6'
   internal_label TEXT NOT NULL,                    -- 'V6 #01'
@@ -19,12 +19,12 @@ CREATE TABLE machines (
   updated_by     TEXT
 );
 
-CREATE TABLE probes (
+CREATE TABLE IF NOT EXISTS probes (
   id    TEXT PRIMARY KEY,                          -- 'CONVEXO', 'LINEAR', ...
   label TEXT NOT NULL
 );
 
-CREATE TABLE machine_probes (
+CREATE TABLE IF NOT EXISTS machine_probes (
   machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
   probe_id   TEXT NOT NULL REFERENCES probes(id)   ON DELETE RESTRICT,
   PRIMARY KEY (machine_id, probe_id)
@@ -33,7 +33,7 @@ CREATE TABLE machine_probes (
 -- ---------------------------------------------------------------------------
 -- Topologia
 -- ---------------------------------------------------------------------------
-CREATE TABLE rooms (
+CREATE TABLE IF NOT EXISTS rooms (
   id                TEXT PRIMARY KEY,              -- '1A-06', '2A-01'
   floor             SMALLINT NOT NULL CHECK (floor IN (1, 2)),
   room_number       SMALLINT NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE rooms (
 -- ---------------------------------------------------------------------------
 -- Cursos
 -- ---------------------------------------------------------------------------
-CREATE TABLE courses (
+CREATE TABLE IF NOT EXISTS courses (
   id                  TEXT PRIMARY KEY,            -- 'pg-us-ecof'
   short_name          TEXT NOT NULL,
   full_name           TEXT NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE courses (
 );
 
 -- Regras de máquina por curso (hipótese H2): 1ª opção, 2ª opção ou contingência.
-CREATE TABLE course_machine_rules (
+CREATE TABLE IF NOT EXISTS course_machine_rules (
   course_id  TEXT NOT NULL REFERENCES courses(id)  ON DELETE CASCADE,
   machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
   quality    TEXT NOT NULL CHECK (quality IN ('IDEAL','SECONDARY','CONTINGENCY')),
@@ -71,7 +71,7 @@ CREATE TABLE course_machine_rules (
 -- ---------------------------------------------------------------------------
 -- Escalas
 -- ---------------------------------------------------------------------------
-CREATE TABLE engine_config (
+CREATE TABLE IF NOT EXISTS engine_config (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   w1_fit          NUMERIC NOT NULL DEFAULT 1,
   w2_proximity    NUMERIC NOT NULL DEFAULT 1,
@@ -81,7 +81,7 @@ CREATE TABLE engine_config (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE weekly_schedules (
+CREATE TABLE IF NOT EXISTS weekly_schedules (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title          TEXT NOT NULL,                    -- 'FDS 23-25'
   status         TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','PUBLISHED','CHANGED')),
@@ -92,7 +92,7 @@ CREATE TABLE weekly_schedules (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE shifts (
+CREATE TABLE IF NOT EXISTS shifts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   schedule_id UUID NOT NULL REFERENCES weekly_schedules(id) ON DELETE CASCADE,
   shift_key   TEXT NOT NULL,                       -- 'SABADO_MANHA'
@@ -101,13 +101,13 @@ CREATE TABLE shifts (
   UNIQUE (schedule_id, shift_key)
 );
 
-CREATE TABLE shift_disabled_rooms (
+CREATE TABLE IF NOT EXISTS shift_disabled_rooms (
   shift_id UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
   room_id  TEXT NOT NULL REFERENCES rooms(id),
   PRIMARY KEY (shift_id, room_id)
 );
 
-CREATE TABLE shift_demands (
+CREATE TABLE IF NOT EXISTS shift_demands (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shift_id       UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
   course_id      TEXT NOT NULL REFERENCES courses(id),
@@ -118,7 +118,7 @@ CREATE TABLE shift_demands (
   UNIQUE (shift_id, course_id)
 );
 
-CREATE TABLE allocations (
+CREATE TABLE IF NOT EXISTS allocations (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shift_id      UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
   demand_id     UUID NOT NULL REFERENCES shift_demands(id) ON DELETE CASCADE,
@@ -133,7 +133,7 @@ CREATE TABLE allocations (
   CONSTRAINT uq_allocation_room_per_shift    UNIQUE (shift_id, room_id)
 );
 
-CREATE TABLE allocation_explanations (
+CREATE TABLE IF NOT EXISTS allocation_explanations (
   allocation_id UUID PRIMARY KEY REFERENCES allocations(id) ON DELETE CASCADE,
   fit_term       NUMERIC NOT NULL,
   proximity_term NUMERIC NOT NULL,
@@ -142,7 +142,7 @@ CREATE TABLE allocation_explanations (
   text_pt        TEXT NOT NULL
 );
 
-CREATE TABLE manual_locks (
+CREATE TABLE IF NOT EXISTS manual_locks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shift_id   UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
   machine_id TEXT NOT NULL REFERENCES machines(id),
@@ -154,14 +154,14 @@ CREATE TABLE manual_locks (
 );
 
 -- Andar de cada máquina no início da escala (DEC-C).
-CREATE TABLE machine_location_snapshots (
+CREATE TABLE IF NOT EXISTS machine_location_snapshots (
   schedule_id UUID NOT NULL REFERENCES weekly_schedules(id) ON DELETE CASCADE,
   machine_id  TEXT NOT NULL REFERENCES machines(id),
   floor       SMALLINT NOT NULL CHECK (floor IN (1, 2)),
   PRIMARY KEY (schedule_id, machine_id)
 );
 
-CREATE TABLE schedule_versions (
+CREATE TABLE IF NOT EXISTS schedule_versions (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   schedule_id UUID NOT NULL REFERENCES weekly_schedules(id) ON DELETE CASCADE,
   label       TEXT NOT NULL,                       -- 'Original', 'Alterado 1'
@@ -170,7 +170,7 @@ CREATE TABLE schedule_versions (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
   id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   schedule_id UUID REFERENCES weekly_schedules(id) ON DELETE SET NULL,
   actor       TEXT NOT NULL,
@@ -182,7 +182,7 @@ CREATE TABLE audit_log (
 -- ---------------------------------------------------------------------------
 -- Integridade: máquina fora de operação não pode ser alocada nem travada.
 -- ---------------------------------------------------------------------------
-CREATE FUNCTION assert_machine_usable() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION assert_machine_usable() RETURNS TRIGGER AS $$
 BEGIN
   IF (SELECT status FROM machines WHERE id = NEW.machine_id) = 'MAINTENANCE' THEN
     RAISE EXCEPTION 'Máquina % está em manutenção e não pode ser alocada', NEW.machine_id
@@ -192,10 +192,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_allocations_machine_usable ON allocations;
 CREATE TRIGGER trg_allocations_machine_usable
   BEFORE INSERT OR UPDATE OF machine_id ON allocations
   FOR EACH ROW EXECUTE FUNCTION assert_machine_usable();
 
+DROP TRIGGER IF EXISTS trg_locks_machine_usable ON manual_locks;
 CREATE TRIGGER trg_locks_machine_usable
   BEFORE INSERT OR UPDATE OF machine_id ON manual_locks
   FOR EACH ROW EXECUTE FUNCTION assert_machine_usable();
@@ -204,7 +206,7 @@ CREATE TRIGGER trg_locks_machine_usable
 -- Salvamento com concorrência otimista (tarefa 1.10): retorna a nova versão ou
 -- falha com 'serialization_failure' se outro operador gravou antes.
 -- ---------------------------------------------------------------------------
-CREATE FUNCTION bump_shift_version(p_shift_id UUID, p_expected_version INT) RETURNS INT AS $$
+CREATE OR REPLACE FUNCTION bump_shift_version(p_shift_id UUID, p_expected_version INT) RETURNS INT AS $$
 DECLARE
   new_version INT;
 BEGIN
@@ -234,8 +236,15 @@ BEGIN
     'schedule_versions','audit_log'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS operadores_total ON %I', t);
     EXECUTE format(
-      'CREATE POLICY operadores_total ON %I FOR ALL TO authenticated USING (true) WITH CHECK (true)', t);
+      'CREATE POLICY operadores_total ON %I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated;
+NOTIFY pgrst, 'reload schema';
 

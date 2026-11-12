@@ -76,7 +76,37 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ---
 
-## [v0.5.3] - 2026-11-12
+## [v0.5.4] - 2026-11-12
+
+Diagnóstico de conectividade e inicialização assistida do Supabase na UI, suporte unificado a chaves publishable, script consolidado SQL e manual completo no README.md.
+
+### Adicionado
+
+- **Assistente de Inicialização do Supabase na UI (`src/ui/components/DatabaseSetupModal.tsx` e `src/ui/App.tsx`):**
+  - Modal interativo com diagnóstico em tempo real do estado do banco (`CLOUD_SYNCED`, `SCHEMA_MISSING`, `PENDING_SYNC`, `LOCAL_ONLY`);
+  - Fluxo em 3 passos para inicialização em 30 segundos: cópia em 1 clique do SQL consolidado, atalho direto para o SQL Editor do projeto no Supabase e botão "Testar & Sincronizar";
+  - Botão no cabeçalho adaptativo: quando detecta que o banco ainda não foi inicializado (`SCHEMA_MISSING`), exibe "Configurar Tabelas Supabase (1 Clique)".
+- **Script SQL Consolidado e Idempotente (`supabase/full_setup.sql` e `src/infrastructure/supabase/fullSetupSql.ts`):**
+  - Script SQL unificado contendo a criação das 17 tabelas relacionais com `CREATE TABLE IF NOT EXISTS`, índices, constraints anti-duplicidade (`RN10`), função `bump_shift_version` de concorrência otimista, trigger de quarentena de manutenção e carga completa de seeds (29 máquinas, 33 salas, 22 cursos e matriz de regras clínicas) com `ON CONFLICT DO NOTHING`.
+- **Manual Completo de Instalação e Configuração (`README.md`):**
+  - Criação de documentação detalhada cobrindo arquitetura clínica, pré-requisitos, passo a passo de instalação em 3 comandos, configuração de `.env.local`, guia de inicialização do Supabase (Opção A via UI e Opção B via SQL Editor), manual operacional dos 4 passos da equipe, tabela de comandos e políticas de segurança.
+
+### Corrigido
+
+- **Eliminação de Erros 404 (PGRST205) no Console (`src/infrastructure/supabase/supabaseClient.ts` e `src/application/store.ts`):**
+  - Implementada função `checkSupabaseSchemaHealth()` que consulta previamente a existência das tabelas antes de disparar escritas em lote no Supabase, evitando chamadas cegas rejeitadas pelo PostgREST;
+  - Adequação dos headers HTTP para chaves de API do novo formato `sb_publishable_...` (enviando `apikey` limpo sem necessidade de `Bearer`);
+  - Adicionado `?on_conflict=id` em todos os endpoints REST de catálogo (`machines`, `rooms`, `courses`, `course_machine_rules`), garantindo idempotência estrita.
+- **Políticas RLS e Acesso a Chaves Anônimas (`supabase/migrations/0001_schema.sql`):**
+  - Políticas de Row Level Security ajustadas para cobrir tanto `anon` quanto `authenticated`, permitindo leitura e sincronização legítimas do catálogo pelo frontend;
+  - Concedidos `GRANT ALL` e comando de notificação `NOTIFY pgrst, 'reload schema'` para atualização imediata do cache do PostgREST.
+
+### Alterado
+
+- **Configuração de Variáveis no Build (`vite.config.ts`):**
+  - Adicionado suporte a `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` no `envPrefix`, preservando isolamento estrito de `SUPABASE_SECRET_KEY` fora do bundle cliente.
+- **Ignorados de CLI (`.gitignore`):**
+  - Adicionado `supabase/.temp/` para evitar rastreamento de cache do CLI do Supabase.
 
 Refatoração de desacoplamento da herança de salas por curso no motor (RN06), snapshots reais e rollback de versões (RF08 e RN11), resolução guiada de concorrência otimista (409) e manual interativo na UI.
 

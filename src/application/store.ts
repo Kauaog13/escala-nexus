@@ -30,6 +30,7 @@ import {
   type SaveShiftTransactionalInput,
 } from '@/infrastructure/local/localDatabase';
 import {
+  checkSupabaseSchemaHealth,
   isSupabaseConfigured,
   syncCatalogBatchToSupabase,
   syncCourseRuleToSupabase,
@@ -61,6 +62,7 @@ export interface RecalcDiffEntry {
 export interface NexusAppStore extends NexusDatabaseState {
   supabaseConnected: boolean;
   syncState: SyncConnectionState;
+  syncDiagnosisMessage: string | null;
   lastCalculationMs: number;
   lastRecalcDiff: RecalcDiffEntry[] | null;
   undoStack: UndoHistoryEntry[];
@@ -139,6 +141,7 @@ export interface NexusAppStore extends NexusDatabaseState {
   exportBackupJson: () => string;
   importBackupJson: (rawJson: string) => void;
   restoreScheduleVersion: (versionId: string) => void;
+  verifySupabaseConnection: () => Promise<SyncConnectionState>;
   syncNowWithSupabase: () => Promise<boolean>;
 
   saveShiftTransactional: (input: Omit<SaveShiftTransactionalInput, 'actor'>) => void;
@@ -242,6 +245,7 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
   ...dbInstance.getSnapshot(),
   supabaseConnected: isSupabaseConfigured(),
   syncState: isSupabaseConfigured() ? 'CLOUD_SYNCED' : 'LOCAL_ONLY',
+  syncDiagnosisMessage: null,
   lastCalculationMs: 1.2,
   lastRecalcDiff: null,
   undoStack: [],
@@ -760,23 +764,42 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
     });
   },
 
+  verifySupabaseConnection: async () => {
+    const diagnosis = await checkSupabaseSchemaHealth(true);
+    set({
+      syncState: diagnosis.state,
+      syncDiagnosisMessage: diagnosis.message,
+    });
+    return diagnosis.state;
+  },
+
   syncNowWithSupabase: async () => {
     if (!isSupabaseConfigured()) {
-      set({ syncState: 'LOCAL_ONLY' });
+      set({
+        syncState: 'LOCAL_ONLY',
+        syncDiagnosisMessage: 'Supabase não configurado.',
+      });
       return false;
     }
     set({ syncState: 'PENDING_SYNC' });
     const snap = dbInstance.getSnapshot();
     try {
-      const ok = await syncCatalogBatchToSupabase({
+      const result = await syncCatalogBatchToSupabase({
         machines: snap.machines,
         rooms: snap.rooms,
         courses: snap.courses,
+        courseRules: snap.courseRules,
       });
-      set({ syncState: ok ? 'CLOUD_SYNCED' : 'PENDING_SYNC' });
-      return ok;
+      set({
+        syncState: result.state,
+        syncDiagnosisMessage: result.message,
+      });
+      return result.ok;
     } catch {
-      set({ syncState: 'PENDING_SYNC' });
+      set({
+        syncState: 'PENDING_SYNC',
+        syncDiagnosisMessage: 'Falha de comunicação ao sincronizar com o Supabase.',
+      });
       return false;
     }
   },

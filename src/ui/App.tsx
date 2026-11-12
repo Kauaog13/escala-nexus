@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   BookOpen,
@@ -13,6 +13,7 @@ import {
 import { useNexusStore } from '@/application/store';
 import { AuditAndConcurrencyView } from './components/AuditAndConcurrencyView';
 import { CoursesCatalogView } from './components/CoursesCatalogView';
+import { DatabaseSetupModal } from './components/DatabaseSetupModal';
 import { HelpModal } from './components/HelpModal';
 import { MachineInventoryView } from './components/MachineInventoryView';
 import { RoomsTopologyView } from './components/RoomsTopologyView';
@@ -32,6 +33,7 @@ export default function App() {
     syncState,
     switchOperator,
     renameOperator,
+    verifySupabaseConnection,
     syncNowWithSupabase,
     resetToSeed,
   } = useNexusStore();
@@ -40,6 +42,11 @@ export default function App() {
   const [editingOperator, setEditingOperator] = useState(false);
   const [operatorDraftName, setOperatorDraftName] = useState('');
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showDbSetupModal, setShowDbSetupModal] = useState(false);
+
+  useEffect(() => {
+    void verifySupabaseConnection();
+  }, [verifySupabaseConnection]);
 
   const currentOperator =
     operators.find((op) => op.id === currentOperatorId) ?? operators[0];
@@ -90,24 +97,35 @@ export default function App() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                void syncNowWithSupabase();
+              onClick={async () => {
+                if (syncState === 'SCHEMA_MISSING') {
+                  setShowDbSetupModal(true);
+                  return;
+                }
+                const ok = await syncNowWithSupabase();
+                if (!ok) {
+                  setShowDbSetupModal(true);
+                }
               }}
-              title="Clique para sincronizar o catálogo e as configurações com o Supabase"
+              title="Clique para sincronizar ou configurar as tabelas no Supabase"
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
                 syncState === 'CLOUD_SYNCED'
                   ? 'border-nexus-green bg-nexus-green-deep/40 text-nexus-green hover:bg-nexus-green-deep/60'
-                  : syncState === 'PENDING_SYNC'
-                    ? 'border-nexus-amber bg-amber-950/50 text-amber-300'
-                    : 'border-zinc-700 bg-nexus-surface text-zinc-300'
+                  : syncState === 'SCHEMA_MISSING'
+                    ? 'border-amber-500 bg-amber-950/60 font-medium text-amber-200 hover:bg-amber-900/60'
+                    : syncState === 'PENDING_SYNC'
+                      ? 'border-nexus-amber bg-amber-950/50 text-amber-300'
+                      : 'border-zinc-700 bg-nexus-surface text-zinc-300'
               }`}
             >
               <Database className="h-3.5 w-3.5 text-nexus-green" />
               {syncState === 'CLOUD_SYNCED' && supabaseConnected
                 ? 'Sincronizado (Supabase Realtime)'
-                : syncState === 'PENDING_SYNC'
-                  ? 'Pendente de Sincronização (Clique p/ tentar)'
-                  : 'Local-First (Offline-Ready)'}
+                : syncState === 'SCHEMA_MISSING'
+                  ? 'Configurar Tabelas Supabase (1 Clique)'
+                  : syncState === 'PENDING_SYNC'
+                    ? 'Pendente de Sincronização (Clique p/ tentar)'
+                    : 'Local-First (Offline-Ready)'}
             </button>
 
             <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-nexus-surface px-2.5 py-1.5 text-xs">
@@ -295,6 +313,9 @@ export default function App() {
         {activeTab === 'AUDIT' && <AuditAndConcurrencyView />}
 
         <HelpModal isOpen={showHelpModal} onClose={() => setShowHelpModal(false)} />
+        {showDbSetupModal && (
+          <DatabaseSetupModal onClose={() => setShowDbSetupModal(false)} />
+        )}
       </main>
     </div>
   );
