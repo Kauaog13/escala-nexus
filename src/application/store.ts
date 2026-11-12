@@ -48,10 +48,21 @@ interface UndoHistoryEntry {
   manualLocks: ManualLock[];
 }
 
+export interface RecalcDiffEntry {
+  shiftId: string;
+  shiftLabel: string;
+  roomId: string;
+  fromMachineId?: string;
+  fromMachineLabel: string;
+  toMachineId?: string;
+  toMachineLabel: string;
+}
+
 export interface NexusAppStore extends NexusDatabaseState {
   supabaseConnected: boolean;
   syncState: SyncConnectionState;
   lastCalculationMs: number;
+  lastRecalcDiff: RecalcDiffEntry[] | null;
   undoStack: UndoHistoryEntry[];
   pendingSwapPrompt: {
     shiftId: string;
@@ -86,6 +97,7 @@ export interface NexusAppStore extends NexusDatabaseState {
 
   // Ações de Planejamento e Grade Interativa (Sprints 2 e 3)
   generateWeekSchedule: () => void;
+  dismissRecalcDiff: () => void;
   addShiftToSchedule: (shiftKey: string) => string;
   removeShiftFromSchedule: (shiftId: string) => void;
   upsertShiftDemand: (demand: ShiftDemand) => void;
@@ -193,11 +205,44 @@ if (dbInstance.getSnapshot().allocations.length === 0) {
   runWeekAllocationOnDb(dbInstance);
 }
 
+function computeAllocationsDiff(
+  before: Allocation[],
+  after: Allocation[],
+  shifts: NexusDatabaseState['shifts'],
+  machines: Machine[],
+): RecalcDiffEntry[] {
+  const machinesById = new Map(machines.map((m) => [m.id, m.internalLabel]));
+  const shiftsById = new Map(shifts.map((s) => [s.id, s.label]));
+  const beforeMap = new Map(before.map((a) => [`${a.shiftId}::${a.roomId}`, a.machineId]));
+  const afterMap = new Map(after.map((a) => [`${a.shiftId}::${a.roomId}`, a.machineId]));
+  const keys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+
+  const diffs: RecalcDiffEntry[] = [];
+  for (const key of keys) {
+    const [shiftId = '', roomId = ''] = key.split('::');
+    const prevId = beforeMap.get(key);
+    const nextId = afterMap.get(key);
+    if (prevId !== nextId) {
+      diffs.push({
+        shiftId,
+        shiftLabel: shiftsById.get(shiftId) ?? shiftId,
+        roomId,
+        fromMachineId: prevId,
+        fromMachineLabel: prevId ? (machinesById.get(prevId) ?? prevId) : 'Livre',
+        toMachineId: nextId,
+        toMachineLabel: nextId ? (machinesById.get(nextId) ?? nextId) : 'Livre',
+      });
+    }
+  }
+  return diffs;
+}
+
 export const useNexusStore = create<NexusAppStore>((set, get) => ({
   ...dbInstance.getSnapshot(),
   supabaseConnected: isSupabaseConfigured(),
   syncState: isSupabaseConfigured() ? 'CLOUD_SYNCED' : 'LOCAL_ONLY',
   lastCalculationMs: 1.2,
+  lastRecalcDiff: null,
   undoStack: [],
   pendingSwapPrompt: null,
   pendingMaintenanceProposal: null,
@@ -315,11 +360,23 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
       manualLocks: current.manualLocks,
     };
     const elapsedMs = runWeekAllocationOnDb(dbInstance);
+    const updated = dbInstance.getSnapshot();
+    const diff = computeAllocationsDiff(
+      current.allocations,
+      updated.allocations,
+      updated.shifts,
+      updated.machines,
+    );
     set({
-      ...dbInstance.getSnapshot(),
+      ...updated,
       lastCalculationMs: elapsedMs,
+      lastRecalcDiff: diff,
       undoStack: [undoEntry, ...get().undoStack.slice(0, 19)],
     });
+  },
+
+  dismissRecalcDiff: () => {
+    set({ lastRecalcDiff: null });
   },
 
   addShiftToSchedule: (shiftKey) => {

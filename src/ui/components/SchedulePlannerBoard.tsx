@@ -38,10 +38,12 @@ export function SchedulePlannerBoard() {
     rooms,
     courses,
     lastCalculationMs,
+    lastRecalcDiff,
     undoStack,
     pendingSwapPrompt,
     pendingMaintenanceProposal,
     generateWeekSchedule,
+    dismissRecalcDiff,
     addShiftToSchedule,
     removeShiftFromSchedule,
     upsertShiftDemand,
@@ -307,6 +309,43 @@ export function SchedulePlannerBoard() {
         {cloneTitleFeedback && (
           <div className="rounded border border-nexus-green bg-nexus-green-light px-3 py-2 text-xs font-semibold text-nexus-green-deep">
             {cloneTitleFeedback}
+          </div>
+        )}
+
+        {lastRecalcDiff !== null && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-nexus-green bg-nexus-green-light/60 px-3 py-2 text-xs text-nexus-green-deep">
+            <div>
+              {lastRecalcDiff.length === 0 ? (
+                <span className="font-semibold">
+                  Diff do Recálculo (§5.5): Nenhuma sala precisou mudar (100% de estabilidade
+                  mantida).
+                </span>
+              ) : (
+                <div>
+                  <span className="font-bold">
+                    Diff do Recálculo (§5.5): {lastRecalcDiff.length} sala(s) alterada(s):
+                  </span>
+                  <div className="mt-1 flex flex-wrap gap-1.5 font-mono text-[11px]">
+                    {lastRecalcDiff.slice(0, 8).map((item) => (
+                      <span
+                        key={`${item.shiftId}-${item.roomId}`}
+                        className="rounded border border-nexus-green bg-white px-2 py-0.5 text-nexus-black"
+                      >
+                        [{item.shiftLabel}] {item.roomId}: {item.fromMachineLabel} →{' '}
+                        <strong>{item.toMachineLabel}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={dismissRecalcDiff}
+              className="rounded border border-nexus-green bg-white px-2 py-0.5 text-[11px] font-medium text-nexus-green-deep hover:bg-nexus-green-light"
+            >
+              Fechar Diff
+            </button>
           </div>
         )}
 

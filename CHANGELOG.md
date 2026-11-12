@@ -76,6 +76,26 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ---
 
+## [v0.5.2] - 2026-11-12
+
+Visualização de diff no recálculo da escala (§5.5), suíte de testes de workflow do operador (Seção 5), pipeline de CI e documentação do repositório.
+
+### Adicionado
+
+- **Visualização de Diff no Recálculo da Escala (`src/application/store.ts` e `src/ui/components/SchedulePlannerBoard.tsx` — §5.5):**
+  - Implementação de `computeAllocationsDiff`, `lastRecalcDiff` e `dismissRecalcDiff` na store;
+  - Banner informativo dinâmico pós-recálculo exibindo exatamente quais salas trocaram de máquina ou confirmando 100% de estabilidade mantida.
+- **Suíte de Testes de Workflow do Operador (`tests/operator-workflow.test.ts` — Seção 5):**
+  - Testes cobrindo o fluxo operacional ponta a ponta: recálculo com diff, permuta automática anti-duplicidade em colisão de patrimônio (`RN10`) com histórico de `Undo`, e quarentena de equipamento quebrado com menor mudança (`DEC-E`), atualização de status para `CHANGED` e exportação WhatsApp (`RF07`).
+  - Total de 38 testes automatizados aprovados nas 7 suítes do Vitest.
+- **Pipeline de Integração Contínua (CI) e Configuração de Deploy (`.github/workflows/ci.yml` e `vercel.json`):**
+  - Workflow do GitHub Actions validando lint (incluindo trava arquitetural de pureza do domínio `DEC-F`), tipagem TypeScript estrita, suítes de testes completas e build de produção no Node 20;
+  - Configuração de deploy de produção SPA em `vercel.json`.
+- **Documentação Principal do Repositório (`README.md`):**
+  - Apresentação completa do projeto, inventário, objetivos clínicos, comandos de build/teste e índice para todos os manuais e especificações técnicas.
+
+---
+
 ## [v0.5.1] - 2026-11-12
 
 Consolidação da suíte de testes de propriedade e perturbação, fixtures reais de fins de semana, sincronização sob demanda com Supabase e fechamento das Sprints 0 a 4.
