@@ -78,6 +78,31 @@ export interface SaveShiftTransactionalInput {
   actor: string;
 }
 
+export interface WeekShiftTemplate {
+  shiftKey: string;
+  label: string;
+  dayGroup: string;
+  period: 'MANHA' | 'TARDE';
+  order: number;
+}
+
+export const AVAILABLE_WEEK_SHIFTS: WeekShiftTemplate[] = [
+  { shiftKey: 'SEGUNDA_MANHA', label: 'SEGUNDA MANHÃ', dayGroup: 'SEGUNDA', period: 'MANHA', order: 1 },
+  { shiftKey: 'SEGUNDA_TARDE', label: 'SEGUNDA TARDE', dayGroup: 'SEGUNDA', period: 'TARDE', order: 2 },
+  { shiftKey: 'TERCA_MANHA', label: 'TERÇA MANHÃ', dayGroup: 'TERCA', period: 'MANHA', order: 3 },
+  { shiftKey: 'TERCA_TARDE', label: 'TERÇA TARDE', dayGroup: 'TERCA', period: 'TARDE', order: 4 },
+  { shiftKey: 'QUARTA_MANHA', label: 'QUARTA MANHÃ', dayGroup: 'QUARTA', period: 'MANHA', order: 5 },
+  { shiftKey: 'QUARTA_TARDE', label: 'QUARTA TARDE', dayGroup: 'QUARTA', period: 'TARDE', order: 6 },
+  { shiftKey: 'QUINTA_MANHA', label: 'QUINTA MANHÃ', dayGroup: 'QUINTA', period: 'MANHA', order: 7 },
+  { shiftKey: 'QUINTA_TARDE', label: 'QUINTA TARDE', dayGroup: 'QUINTA', period: 'TARDE', order: 8 },
+  { shiftKey: 'SEXTA_MANHA', label: 'SEXTA MANHÃ', dayGroup: 'SEXTA', period: 'MANHA', order: 9 },
+  { shiftKey: 'SEXTA_TARDE', label: 'SEXTA TARDE', dayGroup: 'SEXTA', period: 'TARDE', order: 10 },
+  { shiftKey: 'SABADO_MANHA', label: 'SÁBADO MANHÃ', dayGroup: 'SABADO', period: 'MANHA', order: 11 },
+  { shiftKey: 'SABADO_TARDE', label: 'SÁBADO TARDE', dayGroup: 'SABADO', period: 'TARDE', order: 12 },
+  { shiftKey: 'DOMINGO_MANHA', label: 'DOMINGO MANHÃ', dayGroup: 'DOMINGO', period: 'MANHA', order: 13 },
+  { shiftKey: 'DOMINGO_TARDE', label: 'DOMINGO TARDE', dayGroup: 'DOMINGO', period: 'TARDE', order: 14 },
+];
+
 const STORAGE_KEY = 'escala_nexus_db_v2';
 
 function createInitialState(): NexusDatabaseState {
@@ -591,6 +616,54 @@ export class LocalNexusDatabase {
   // -------------------------------------------------------------------------
   // Demandas, Turnos, Escala e Pesos (Sprints 3 e 4)
   // -------------------------------------------------------------------------
+  addShiftToSchedule(shiftKey: string, actor?: string): Shift {
+    const operatorName = actor ?? this.getCurrentOperator().name;
+    const existing = this.state.shifts.find((s) => s.shiftKey === shiftKey);
+    if (existing) {
+      return structuredClone(existing);
+    }
+
+    const template = AVAILABLE_WEEK_SHIFTS.find((t) => t.shiftKey === shiftKey);
+    const scheduleId = this.state.schedules[0]?.id ?? 'schedule-default';
+    const newShift: Shift = {
+      id: `shift-${shiftKey.toLowerCase().replace(/_/g, '-')}`,
+      scheduleId,
+      shiftKey,
+      label: template?.label ?? shiftKey.replace(/_/g, ' '),
+      version: 1,
+    };
+
+    const orderMap = new Map(AVAILABLE_WEEK_SHIFTS.map((t) => [t.shiftKey, t.order]));
+    this.state.shifts = [...this.state.shifts, newShift].sort(
+      (a, b) => (orderMap.get(a.shiftKey) ?? 99) - (orderMap.get(b.shiftKey) ?? 99),
+    );
+
+    this.appendAudit(operatorName, 'SHIFT_ADDED', {
+      shiftId: newShift.id,
+      shiftKey: newShift.shiftKey,
+      label: newShift.label,
+    });
+    this.persist();
+    return structuredClone(newShift);
+  }
+
+  removeShiftFromSchedule(shiftId: string, actor?: string): void {
+    if (this.state.shifts.length <= 1) {
+      throw new Error('A escala precisa manter pelo menos 1 turno ativo.');
+    }
+    const operatorName = actor ?? this.getCurrentOperator().name;
+    this.state.shifts = this.state.shifts.filter((s) => s.id !== shiftId);
+    this.state.demands = this.state.demands.filter((d) => d.shiftId !== shiftId);
+    this.state.allocations = this.state.allocations.filter((a) => a.shiftId !== shiftId);
+    this.state.manualLocks = this.state.manualLocks.filter((l) => l.shiftId !== shiftId);
+    delete this.state.disabledRoomsByShiftId[shiftId];
+    delete this.state.bottlenecksByShiftId[shiftId];
+    delete this.state.floorMovesByShiftId[shiftId];
+
+    this.appendAudit(operatorName, 'SHIFT_REMOVED', { shiftId });
+    this.persist();
+  }
+
   upsertShiftDemand(demand: ShiftDemand, actor?: string): ShiftDemand {
     const operatorName = actor ?? this.getCurrentOperator().name;
     const idx = this.state.demands.findIndex(
@@ -608,6 +681,106 @@ export class LocalNexusDatabase {
     });
     this.persist();
     return structuredClone(demand);
+  }
+
+  upsertFullDayDemand(demand: ShiftDemand, actor?: string): ShiftDemand[] {
+    const operatorName = actor ?? this.getCurrentOperator().name;
+    const currentShift = this.state.shifts.find((s) => s.id === demand.shiftId);
+    if (!currentShift) {
+      return [this.upsertShiftDemand(demand, operatorName)];
+    }
+
+    const template = AVAILABLE_WEEK_SHIFTS.find((t) => t.shiftKey === currentShift.shiftKey);
+    if (!template) {
+      return [this.upsertShiftDemand(demand, operatorName)];
+    }
+
+    const companionPeriod = template.period === 'MANHA' ? 'TARDE' : 'MANHA';
+    const companionTemplate = AVAILABLE_WEEK_SHIFTS.find(
+      (t) => t.dayGroup === template.dayGroup && t.period === companionPeriod,
+    );
+
+    const savedPrimary = this.upsertShiftDemand(demand, operatorName);
+    if (!companionTemplate) {
+      return [savedPrimary];
+    }
+
+    const companionShift = this.addShiftToSchedule(companionTemplate.shiftKey, operatorName);
+    const existingCompanion = this.state.demands.find(
+      (d) => d.shiftId === companionShift.id && d.courseId === demand.courseId,
+    );
+    const companionDemand: ShiftDemand = {
+      ...structuredClone(demand),
+      id: existingCompanion?.id ?? `dem-${companionShift.id}-${demand.courseId}`,
+      shiftId: companionShift.id,
+    };
+    const savedCompanion = this.upsertShiftDemand(companionDemand, operatorName);
+
+    this.appendAudit(operatorName, 'FULL_DAY_DEMAND_UPSERTED', {
+      dayGroup: template.dayGroup,
+      courseId: demand.courseId,
+      rooms: demand.chosenRooms,
+    });
+    this.persist();
+    return [savedPrimary, savedCompanion];
+  }
+
+  cloneScheduleForNextWeek(newTitle: string, actor?: string): WeeklySchedule {
+    const operatorName = actor ?? this.getCurrentOperator().name;
+    const currentSchedule = this.state.schedules[0];
+    if (!currentSchedule) {
+      throw new Error('Nenhuma escala ativa para clonar.');
+    }
+
+    // Registra snapshot da escala anterior no histórico de versões
+    this.state.scheduleVersions.unshift({
+      id: `ver-clone-${Date.now()}`,
+      scheduleId: currentSchedule.id,
+      label: `Base Clonada: ${currentSchedule.title}`,
+      createdBy: operatorName,
+      createdAt: new Date().toISOString(),
+      allocationsCount: this.state.allocations.length,
+      footerNote: currentSchedule.footerNote,
+    });
+
+    // DEC-C & RF08: herda o andar final onde cada máquina terminou na última escala como initialFloors da nova semana
+    const roomsById = new Map(this.state.rooms.map((r) => [r.id, r]));
+    for (const shift of this.state.shifts) {
+      const shiftAllocs = this.state.allocations.filter((a) => a.shiftId === shift.id);
+      for (const alloc of shiftAllocs) {
+        const room = roomsById.get(alloc.roomId);
+        if (room) {
+          this.state.initialFloors[alloc.machineId] = room.floor;
+        }
+      }
+    }
+
+    const previousId = currentSchedule.id;
+    currentSchedule.id = `schedule-${Date.now()}`;
+    currentSchedule.title = newTitle.trim() || `${currentSchedule.title} (Clonada)`;
+    currentSchedule.status = 'DRAFT';
+    currentSchedule.basedOnId = previousId;
+    currentSchedule.footerNote = '';
+    currentSchedule.updatedBy = operatorName;
+    currentSchedule.updatedAt = new Date().toISOString();
+
+    for (const s of this.state.shifts) {
+      s.scheduleId = currentSchedule.id;
+      s.version = 1;
+    }
+
+    this.appendAudit(
+      operatorName,
+      'SCHEDULE_CLONED_WITH_FLOOR_INHERITANCE',
+      {
+        basedOnId: previousId,
+        newScheduleId: currentSchedule.id,
+        newTitle: currentSchedule.title,
+      },
+      currentSchedule.id,
+    );
+    this.persist();
+    return structuredClone(currentSchedule);
   }
 
   removeShiftDemand(demandId: string, actor?: string): void {

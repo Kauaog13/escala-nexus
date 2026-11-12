@@ -6,6 +6,8 @@ export interface SupabaseConnectionConfig {
   anonKey: string;
 }
 
+export type SyncConnectionState = 'CLOUD_SYNCED' | 'PENDING_SYNC' | 'LOCAL_ONLY';
+
 export function getSupabaseConfig(): SupabaseConnectionConfig | null {
   const url = import.meta.env?.VITE_SUPABASE_URL?.trim() ?? '';
   const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
@@ -114,4 +116,3 @@ export async function callBumpShiftVersionRpc(
   const newVersion = (await response.json()) as number;
   return newVersion;
 }
-

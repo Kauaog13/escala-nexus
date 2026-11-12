@@ -238,5 +238,61 @@ describe('Sprint 1 — Repositório Local-First, CRUD e Garantias ACID (Tarefas 
     expect(savedAllocations).toHaveLength(1);
     expect(savedAllocations[0]?.machineId).toBe('signature');
   });
+
+  it('3.1 — suporta adição de turnos flexíveis da semana (RN01) e lançamento em regime Dia Todo (Manhã + Tarde — RN06)', () => {
+    const db = new LocalNexusDatabase({ persist: false });
+    const quintaManha = db.addShiftToSchedule('QUINTA_MANHA', 'Operador 1');
+    expect(quintaManha.label).toBe('QUINTA MANHÃ');
+
+    const savedBoth = db.upsertFullDayDemand(
+      {
+        id: 'dem-quinta-mefe',
+        shiftId: quintaManha.id,
+        courseId: 'pg-us-mefe',
+        studentsCount: 8,
+        roomsRequired: 4,
+        chosenRooms: ['1A-06', '1A-07', '1A-08', '1A-11'],
+        extraMachine: false,
+      },
+      'Operador 1',
+    );
+
+    expect(savedBoth).toHaveLength(2);
+    const snap = db.getSnapshot();
+    const quintaTarde = snap.shifts.find((s) => s.shiftKey === 'QUINTA_TARDE');
+    expect(quintaTarde).toBeDefined();
+    const tardeDemand = snap.demands.find(
+      (d) => d.shiftId === quintaTarde?.id && d.courseId === 'pg-us-mefe',
+    );
+    expect(tardeDemand?.chosenRooms).toEqual(['1A-06', '1A-07', '1A-08', '1A-11']);
+  });
+
+  it('3.12 — clona escala para o próximo FDS herdando o andar final das máquinas no último turno como initialFloors (RF08 / DEC-C)', () => {
+    const db = new LocalNexusDatabase({ persist: false });
+    db.saveShiftTransactional({
+      shiftId: 'shift-sabado-tarde',
+      expectedVersion: 1,
+      actor: 'Operador 1',
+      allocations: [
+        {
+          id: 'alloc-2a',
+          shiftId: 'shift-sabado-tarde',
+          demandId: 'dem-giob-sab-t',
+          roomId: '2A-05',
+          machineId: 'v7',
+          matchQuality: 'SECONDARY',
+          isPinned: false,
+          inherited: false,
+          score: 60,
+        },
+      ],
+    });
+
+    expect(db.getSnapshot().initialFloors['v7']).toBe(1);
+    const cloned = db.cloneScheduleForNextWeek('FDS 30-01 (Clonada)', 'Operador 1');
+    expect(cloned.title).toBe('FDS 30-01 (Clonada)');
+    expect(cloned.basedOnId).toBe('schedule-default');
+    expect(db.getSnapshot().initialFloors['v7']).toBe(2);
+  });
 });
 

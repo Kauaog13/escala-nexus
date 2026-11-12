@@ -76,6 +76,33 @@ Escopos sugeridos: `domain`, `db`, `ui`, `config`, `docs`.
 
 ---
 
+## [v0.5.0] - 2026-11-12
+
+Refinamentos finais das Sprints 3 e 4: planta radial interativa, drag-and-drop, turnos flexíveis, regime dia todo, clonagem com herança e manual do operador.
+
+### Adicionado
+
+- **Planta Radial de Laudo e Grade Operacional (`FloorMapContainer.tsx` — §9 e Tarefas 3.6 / 4.6):**
+  - visualização em dois modos: Grade Operacional e Planta Radial interativa mapeando a Ilha Central de Laudo com os anéis concêntricos da Zona 1 (+30 pts), Zona 2 (+10 pts) e Zona 3 linear no 2º andar;
+  - suporte nativo a Drag-and-Drop (HTML5) nos cartões de consultório, permitindo arrastar aparelhos entre salas para acionar permuta automática (`RN10`).
+- **Turnos Flexíveis de Segunda a Domingo (`RN01` e Tarefa 3.1):**
+  - suporte a templates de todos os dias da semana (`AVAILABLE_WEEK_SHIFTS`), permitindo adicionar e remover turnos com ordenação cronológica automática;
+  - seletor de regime de lançamento no formulário: **Apenas Turno Atual** vs. **Dia Todo (Manhã + Tarde — `RN06`)**, lançando a turma e espelhando as salas automaticamente em ambos os períodos do dia.
+- **Clonagem de Escala com Herança de Pavimento (`RF08` e `DEC-C` — Tarefa 3.12):**
+  - botão **"Clonar p/ Próximo FDS"** que gera uma nova escala em rascunho preservando o histórico da semana anterior e herdando a localização final das máquinas do último turno como `initialFloors` da nova semana.
+- **Indicador de Sincronização Local/Nuvem (`SyncConnectionState` — Tarefa 3.13):**
+  - indicador no cabeçalho exibindo estados: `Sincronizado (Supabase Realtime)`, `Sincronizando na Nuvem...` ou `Local-First (Offline-Ready)`.
+- **Manual Rápido do Operador (`docs/manual-operador-escala-nexus.md` — Tarefa 4.7):**
+  - guia operacional de 5 minutos explicando o fluxo semanal: conferência de parque, lançamento de turmas, ajustes finos (*Human-in-the-Loop*), tratamento de quebra com menor mudança (`DEC-E`) e exportação para o WhatsApp (`RF07`).
+- **Testes Unitários Adicionais (`tests/repository.test.ts`):**
+  - testes cobrindo a adição de turnos da semana, o lançamento em regime Dia Todo (`RN06`) e a clonagem de escala com herança de andar (`RF08` / `DEC-C`). Totalizando 31 testes passando nas 5 suítes.
+
+### Alterado
+
+- `vite.config.ts`: configuração explícita de `envPrefix: ['VITE_']` para isolar estritamente variáveis de ambiente privadas do bundle de cliente.
+
+---
+
 ## [v0.4.0] - 2026-11-12
 
 Entrega da **Sprint 4 — Telemetria, auditoria e ajuste fino** (tarefas 4.1 a 4.7).

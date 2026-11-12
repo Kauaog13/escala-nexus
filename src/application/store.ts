@@ -34,6 +34,7 @@ import {
   syncCourseRuleToSupabase,
   syncCourseToSupabase,
   syncMachineToSupabase,
+  type SyncConnectionState,
 } from '@/infrastructure/supabase/supabaseClient';
 
 const dbInstance = new LocalNexusDatabase();
@@ -46,6 +47,7 @@ interface UndoHistoryEntry {
 
 export interface NexusAppStore extends NexusDatabaseState {
   supabaseConnected: boolean;
+  syncState: SyncConnectionState;
   lastCalculationMs: number;
   undoStack: UndoHistoryEntry[];
   pendingSwapPrompt: {
@@ -81,8 +83,12 @@ export interface NexusAppStore extends NexusDatabaseState {
 
   // Ações de Planejamento e Grade Interativa (Sprints 2 e 3)
   generateWeekSchedule: () => void;
+  addShiftToSchedule: (shiftKey: string) => string;
+  removeShiftFromSchedule: (shiftId: string) => void;
   upsertShiftDemand: (demand: ShiftDemand) => void;
+  upsertFullDayDemand: (demand: ShiftDemand) => void;
   removeShiftDemand: (demandId: string) => void;
+  cloneScheduleForNextWeek: (newTitle: string) => void;
   suggestRoomsForCourseInShift: (
     shiftId: string,
     courseId: string,
@@ -186,6 +192,7 @@ if (dbInstance.getSnapshot().allocations.length === 0) {
 export const useNexusStore = create<NexusAppStore>((set, get) => ({
   ...dbInstance.getSnapshot(),
   supabaseConnected: isSupabaseConfigured(),
+  syncState: isSupabaseConfigured() ? 'CLOUD_SYNCED' : 'LOCAL_ONLY',
   lastCalculationMs: 1.2,
   undoStack: [],
   pendingSwapPrompt: null,
@@ -203,20 +210,41 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
 
   upsertMachine: (machine) => {
     const saved = dbInstance.upsertMachine(machine);
-    set(dbInstance.getSnapshot());
-    void syncMachineToSupabase(saved).catch(() => undefined);
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
+    void syncMachineToSupabase(saved)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   setMachineStatus: (machineId, status) => {
     const saved = dbInstance.setMachineStatus(machineId, status);
-    set(dbInstance.getSnapshot());
-    void syncMachineToSupabase(saved).catch(() => undefined);
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
+    void syncMachineToSupabase(saved)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   toggleMachineProbe: (machineId, probe) => {
     const saved = dbInstance.toggleMachineProbe(machineId, probe);
-    set(dbInstance.getSnapshot());
-    void syncMachineToSupabase(saved).catch(() => undefined);
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
+    void syncMachineToSupabase(saved)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   deleteMachine: (machineId) => {
@@ -231,8 +259,15 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
 
   upsertCourse: (course) => {
     const saved = dbInstance.upsertCourse(course);
-    set(dbInstance.getSnapshot());
-    void syncCourseToSupabase(saved).catch(() => undefined);
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
+    void syncCourseToSupabase(saved)
+      .then((ok) => {
+        if (ok) set({ syncState: 'CLOUD_SYNCED' });
+      })
+      .catch(() => undefined);
   },
 
   deleteCourse: (courseId) => {
@@ -242,9 +277,16 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
 
   setCourseMachineRule: (courseId, machineId, quality) => {
     dbInstance.setCourseMachineRule(courseId, machineId, quality);
-    set(dbInstance.getSnapshot());
+    set({
+      ...dbInstance.getSnapshot(),
+      syncState: isSupabaseConfigured() ? 'PENDING_SYNC' : 'LOCAL_ONLY',
+    });
     if (quality !== null) {
-      void syncCourseRuleToSupabase({ courseId, machineId, quality }).catch(() => undefined);
+      void syncCourseRuleToSupabase({ courseId, machineId, quality })
+        .then((ok) => {
+          if (ok) set({ syncState: 'CLOUD_SYNCED' });
+        })
+        .catch(() => undefined);
     }
   },
 
@@ -268,8 +310,36 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
     });
   },
 
+  addShiftToSchedule: (shiftKey) => {
+    const added = dbInstance.addShiftToSchedule(shiftKey);
+    const elapsedMs = runWeekAllocationOnDb(dbInstance);
+    set({
+      ...dbInstance.getSnapshot(),
+      lastCalculationMs: elapsedMs,
+    });
+    return added.id;
+  },
+
+  removeShiftFromSchedule: (shiftId) => {
+    dbInstance.removeShiftFromSchedule(shiftId);
+    const elapsedMs = runWeekAllocationOnDb(dbInstance);
+    set({
+      ...dbInstance.getSnapshot(),
+      lastCalculationMs: elapsedMs,
+    });
+  },
+
   upsertShiftDemand: (demand) => {
     dbInstance.upsertShiftDemand(demand);
+    const elapsedMs = runWeekAllocationOnDb(dbInstance);
+    set({
+      ...dbInstance.getSnapshot(),
+      lastCalculationMs: elapsedMs,
+    });
+  },
+
+  upsertFullDayDemand: (demand) => {
+    dbInstance.upsertFullDayDemand(demand);
     const elapsedMs = runWeekAllocationOnDb(dbInstance);
     set({
       ...dbInstance.getSnapshot(),
@@ -283,6 +353,16 @@ export const useNexusStore = create<NexusAppStore>((set, get) => ({
     set({
       ...dbInstance.getSnapshot(),
       lastCalculationMs: elapsedMs,
+    });
+  },
+
+  cloneScheduleForNextWeek: (newTitle) => {
+    dbInstance.cloneScheduleForNextWeek(newTitle);
+    const elapsedMs = runWeekAllocationOnDb(dbInstance);
+    set({
+      ...dbInstance.getSnapshot(),
+      lastCalculationMs: elapsedMs,
+      undoStack: [],
     });
   },
 

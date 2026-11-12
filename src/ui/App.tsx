@@ -27,6 +27,7 @@ export default function App() {
     operators,
     currentOperatorId,
     supabaseConnected,
+    syncState,
     switchOperator,
     renameOperator,
     resetToSeed,
@@ -81,17 +82,23 @@ export default function App() {
             </div>
           </div>
 
-          {/* Seletor de Operador Autenticado (Tarefa 1.9) + Status de Persistência */}
+          {/* Seletor de Operador Autenticado (Tarefa 1.9) + Status de Persistência (Tarefa 3.13) */}
           <div className="flex flex-wrap items-center gap-3">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                supabaseConnected
+                syncState === 'CLOUD_SYNCED'
                   ? 'border-nexus-green bg-nexus-green-deep/40 text-nexus-green'
-                  : 'border-zinc-700 bg-nexus-surface text-zinc-300'
+                  : syncState === 'PENDING_SYNC'
+                    ? 'border-nexus-amber bg-amber-950/50 text-amber-300'
+                    : 'border-zinc-700 bg-nexus-surface text-zinc-300'
               }`}
             >
               <Database className="h-3.5 w-3.5 text-nexus-green" />
-              {supabaseConnected ? 'Supabase Realtime Ativo' : 'Local-First (Offline-Ready)'}
+              {syncState === 'CLOUD_SYNCED' && supabaseConnected
+                ? 'Sincronizado (Supabase Realtime)'
+                : syncState === 'PENDING_SYNC'
+                  ? 'Sincronizando na Nuvem...'
+                  : 'Local-First (Offline-Ready)'}
             </span>
 
             <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-nexus-surface px-2.5 py-1.5 text-xs">

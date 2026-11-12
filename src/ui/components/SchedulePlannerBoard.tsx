@@ -2,25 +2,27 @@ import { useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownUp,
+  CalendarPlus,
   Check,
   Copy,
+  CopyPlus,
   Download,
-  HelpCircle,
-  Lock,
   Plus,
   RefreshCw,
   Sparkles,
   Trash2,
   Undo2,
-  Unlock,
   Wrench,
+  X,
 } from 'lucide-react';
 import { useNexusStore } from '@/application/store';
 import {
   buildShiftTransitionReport,
   formatWeekWhatsAppText,
 } from '@/domain/export/whatsappAndLogistics';
-import type { ScheduleStatus } from '@/domain/types';
+import type { ScheduleStatus, ShiftDemand } from '@/domain/types';
+import { AVAILABLE_WEEK_SHIFTS } from '@/infrastructure/local/localDatabase';
+import { FloorMapContainer } from './FloorMapContainer';
 
 export function SchedulePlannerBoard() {
   const {
@@ -40,8 +42,12 @@ export function SchedulePlannerBoard() {
     pendingSwapPrompt,
     pendingMaintenanceProposal,
     generateWeekSchedule,
+    addShiftToSchedule,
+    removeShiftFromSchedule,
     upsertShiftDemand,
+    upsertFullDayDemand,
     removeShiftDemand,
+    cloneScheduleForNextWeek,
     suggestRoomsForCourseInShift,
     toggleDisabledRoomInShift,
     assignOrSwapMachineInRoom,
@@ -58,11 +64,13 @@ export function SchedulePlannerBoard() {
   const [activeShiftId, setActiveShiftId] = useState<string>(
     shifts[2]?.id ?? shifts[0]?.id ?? 'shift-sabado-manha',
   );
-  const [expandedExplainRoomId, setExpandedExplainRoomId] = useState<string | null>(null);
   const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
+  const [newShiftKeyToAdd, setNewShiftKeyToAdd] = useState<string>('QUINTA_MANHA');
+  const [cloneTitleFeedback, setCloneTitleFeedback] = useState<string | null>(null);
 
   // Estado do formulário de Lançar/Editar Curso no Turno
   const [selectedCourseId, setSelectedCourseId] = useState<string>('pg-us-ecof');
+  const [launchRegime, setLaunchRegime] = useState<'SINGLE_SHIFT' | 'FULL_DAY'>('SINGLE_SHIFT');
   const [studentsCount, setStudentsCount] = useState<number>(12);
   const [customRoomsCount, setCustomRoomsCount] = useState<number>(6);
   const [extraMachine, setExtraMachine] = useState<boolean>(false);
@@ -85,10 +93,12 @@ export function SchedulePlannerBoard() {
 
   const coursesById = new Map(courses.map((c) => [c.id, c]));
   const machinesById = new Map(machines.map((m) => [m.id, m]));
-  const explanationsByAllocId = new Map(explanations.map((e) => [e.allocationId, e]));
-  const allocByRoomId = new Map(shiftAllocations.map((a) => [a.roomId, a]));
 
   const selectedCourseObj = coursesById.get(selectedCourseId);
+  const activeShiftKeys = new Set(shifts.map((s) => s.shiftKey));
+  const addableShiftTemplates = AVAILABLE_WEEK_SHIFTS.filter(
+    (t) => !activeShiftKeys.has(t.shiftKey),
+  );
 
   function handleStudentsChange(val: number) {
     const clean = Math.max(1, val);
@@ -136,7 +146,7 @@ export function SchedulePlannerBoard() {
   function handleAddOrUpdateDemand(e: React.FormEvent) {
     e.preventDefault();
     const existing = shiftDemands.find((d) => d.courseId === selectedCourseId);
-    upsertShiftDemand({
+    const payload: ShiftDemand = {
       id: existing?.id ?? `dem-${activeShift.id}-${selectedCourseId}`,
       shiftId: activeShift.id,
       courseId: selectedCourseId,
@@ -146,7 +156,34 @@ export function SchedulePlannerBoard() {
       extraMachine,
       manualMachineIds:
         manualMachinesDraft.length > 0 ? manualMachinesDraft : undefined,
-    });
+    };
+
+    if (launchRegime === 'FULL_DAY') {
+      upsertFullDayDemand(payload);
+    } else {
+      upsertShiftDemand(payload);
+    }
+  }
+
+  function handleAddShift() {
+    if (!newShiftKeyToAdd) return;
+    const addedId = addShiftToSchedule(newShiftKeyToAdd);
+    setActiveShiftId(addedId);
+    const remaining = AVAILABLE_WEEK_SHIFTS.find(
+      (t) => t.shiftKey !== newShiftKeyToAdd && !activeShiftKeys.has(t.shiftKey),
+    );
+    if (remaining) {
+      setNewShiftKeyToAdd(remaining.shiftKey);
+    }
+  }
+
+  function handleCloneNextWeek() {
+    const nextTitle = `Próximo FDS (Herdado de ${schedule?.title ?? 'Escala Anterior'})`;
+    cloneScheduleForNextWeek(nextTitle);
+    setCloneTitleFeedback(
+      'Escala clonada! O andar final das máquinas no último turno foi herdado como ponto de partida (DEC-C / RF08).',
+    );
+    setTimeout(() => setCloneTitleFeedback(null), 5000);
   }
 
   // Relatório de Transição entre o Turno Anterior e o Turno Atual (RF06)
@@ -199,77 +236,155 @@ export function SchedulePlannerBoard() {
 
   return (
     <div className="space-y-5">
-      {/* Barra de Controle da Escala e Seletor de Turnos */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-nexus-border bg-nexus-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          {shifts.map((s) => {
-            const count = allocations.filter((a) => a.shiftId === s.id).length;
-            const isCurrent = s.id === activeShift.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveShiftId(s.id)}
-                className={`rounded-md border px-3.5 py-2 text-xs font-semibold transition ${
-                  isCurrent
-                    ? 'border-nexus-black bg-nexus-black text-nexus-white shadow-sm'
-                    : 'border-nexus-border bg-zinc-50 text-zinc-700 hover:bg-zinc-100'
-                }`}
-              >
-                {s.label}{' '}
-                <span
-                  className={`ml-1 rounded px-1.5 py-0.5 text-[11px] ${
-                    isCurrent
-                      ? 'bg-nexus-green text-nexus-white'
-                      : 'bg-zinc-200 text-zinc-700'
-                  }`}
-                >
-                  {count} salas
-                </span>
-              </button>
-            );
-          })}
+      {/* Barra de Controle da Escala, Título Editável, Clonagem RF08 e Seletor de Turnos Flexíveis (RN01) */}
+      <div className="space-y-3 rounded-lg border border-nexus-border bg-nexus-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-nexus-border pb-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-semibold text-zinc-600">Título da Escala:</label>
+            <input
+              value={schedule?.title ?? ''}
+              onChange={(e) => updateScheduleMetadata({ title: e.target.value })}
+              className="rounded border border-nexus-border bg-zinc-50 px-2.5 py-1 text-xs font-bold text-nexus-black"
+            />
+            {schedule?.basedOnId && (
+              <span className="rounded bg-nexus-green-light px-2 py-0.5 text-[11px] font-semibold text-nexus-green-deep">
+                Andar Inicial Herdado (DEC-C)
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-zinc-100 px-2.5 py-1 font-mono text-xs text-zinc-600">
+              Cálculo: {lastCalculationMs} ms
+            </span>
+
+            <select
+              value={schedule?.status ?? 'DRAFT'}
+              onChange={(e) =>
+                updateScheduleMetadata({ status: e.target.value as ScheduleStatus })
+              }
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
+                schedule?.status === 'PUBLISHED'
+                  ? 'border-nexus-green bg-nexus-green-light text-nexus-green-deep'
+                  : schedule?.status === 'CHANGED'
+                    ? 'border-nexus-amber bg-amber-100 text-amber-900'
+                    : 'border-nexus-border bg-white text-zinc-700'
+              }`}
+            >
+              <option value="DRAFT">Status: Rascunho</option>
+              <option value="PUBLISHED">Status: Oficial Publicada</option>
+              <option value="CHANGED">Status: Alterada em Andamento</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleCloneNextWeek}
+              title="Clonar escala para o próximo FDS herdando o andar final das máquinas do último turno (RF08 / DEC-C)"
+              className="inline-flex items-center gap-1.5 rounded-md border border-nexus-border bg-white px-3 py-1.5 text-xs font-semibold text-nexus-black hover:bg-zinc-50"
+            >
+              <CopyPlus className="h-3.5 w-3.5 text-nexus-green" /> Clonar p/ Próximo FDS (RF08)
+            </button>
+
+            <button
+              type="button"
+              disabled={undoStack.length === 0}
+              onClick={undoLastAction}
+              className="inline-flex items-center gap-1 rounded-md border border-nexus-border bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            >
+              <Undo2 className="h-3.5 w-3.5" /> Desfazer ({undoStack.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={generateWeekSchedule}
+              className="inline-flex items-center gap-1.5 rounded-md bg-nexus-green px-3.5 py-1.5 text-xs font-semibold text-nexus-white hover:bg-nexus-green-dark"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Recalcular Escala
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded bg-zinc-100 px-2.5 py-1 font-mono text-xs text-zinc-600">
-            Cálculo: {lastCalculationMs} ms
-          </span>
+        {cloneTitleFeedback && (
+          <div className="rounded border border-nexus-green bg-nexus-green-light px-3 py-2 text-xs font-semibold text-nexus-green-deep">
+            {cloneTitleFeedback}
+          </div>
+        )}
 
-          <select
-            value={schedule?.status ?? 'DRAFT'}
-            onChange={(e) =>
-              updateScheduleMetadata({ status: e.target.value as ScheduleStatus })
-            }
-            className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
-              schedule?.status === 'PUBLISHED'
-                ? 'border-nexus-green bg-nexus-green-light text-nexus-green-deep'
-                : schedule?.status === 'CHANGED'
-                  ? 'border-nexus-amber bg-amber-100 text-amber-900'
-                  : 'border-nexus-border bg-white text-zinc-700'
-            }`}
-          >
-            <option value="DRAFT">Status: Rascunho</option>
-            <option value="PUBLISHED">Status: Oficial Publicada</option>
-            <option value="CHANGED">Status: Alterada em Andamento</option>
-          </select>
+        {/* Abas de Turnos da Semana + Adição de Dia/Turno Extra (Segunda a Domingo — RN01) */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {shifts.map((s) => {
+              const count = allocations.filter((a) => a.shiftId === s.id).length;
+              const isCurrent = s.id === activeShift.id;
+              return (
+                <div key={s.id} className="inline-flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setActiveShiftId(s.id)}
+                    className={`rounded-l-md border px-3.5 py-2 text-xs font-semibold transition ${
+                      isCurrent
+                        ? 'border-nexus-black bg-nexus-black text-nexus-white shadow-sm'
+                        : 'border-nexus-border bg-zinc-50 text-zinc-700 hover:bg-zinc-100'
+                    }`}
+                  >
+                    {s.label}{' '}
+                    <span
+                      className={`ml-1 rounded px-1.5 py-0.5 text-[11px] ${
+                        isCurrent
+                          ? 'bg-nexus-green text-nexus-white'
+                          : 'bg-zinc-200 text-zinc-700'
+                      }`}
+                    >
+                      {count} salas
+                    </span>
+                  </button>
+                  {shifts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fallbackShift = shifts.find((other) => other.id !== s.id);
+                        removeShiftFromSchedule(s.id);
+                        if (isCurrent && fallbackShift) {
+                          setActiveShiftId(fallbackShift.id);
+                        }
+                      }}
+                      title={`Remover turno ${s.label}`}
+                      className={`rounded-r-md border border-l-0 px-1.5 py-2 text-xs ${
+                        isCurrent
+                          ? 'border-nexus-black bg-nexus-surface text-zinc-300 hover:text-white'
+                          : 'border-nexus-border bg-zinc-100 text-zinc-500 hover:text-nexus-red'
+                      }`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-          <button
-            type="button"
-            disabled={undoStack.length === 0}
-            onClick={undoLastAction}
-            className="inline-flex items-center gap-1 rounded-md border border-nexus-border bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
-          >
-            <Undo2 className="h-3.5 w-3.5" /> Desfazer ({undoStack.length})
-          </button>
-
-          <button
-            type="button"
-            onClick={generateWeekSchedule}
-            className="inline-flex items-center gap-1.5 rounded-md bg-nexus-green px-3.5 py-1.5 text-xs font-semibold text-nexus-white hover:bg-nexus-green-dark"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Recalcular Escala
-          </button>
+          {addableShiftTemplates.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={newShiftKeyToAdd}
+                onChange={(e) => setNewShiftKeyToAdd(e.target.value)}
+                className="rounded border border-nexus-border bg-zinc-50 px-2 py-1.5 text-xs font-medium text-zinc-700"
+              >
+                {addableShiftTemplates.map((t) => (
+                  <option key={t.shiftKey} value={t.shiftKey}>
+                    + {t.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAddShift}
+                className="inline-flex items-center gap-1 rounded border border-nexus-border bg-white px-2.5 py-1.5 text-xs font-semibold text-nexus-black hover:bg-zinc-50"
+              >
+                <CalendarPlus className="h-3.5 w-3.5 text-nexus-green" /> Adicionar Turno (RN01)
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -421,6 +536,36 @@ export function SchedulePlannerBoard() {
               </select>
             </div>
 
+            <div className="sm:col-span-3">
+              <label className="block text-xs font-medium text-zinc-700">
+                Regime de Horário do Curso (RN01 e RN06)
+              </label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLaunchRegime('SINGLE_SHIFT')}
+                  className={`rounded border px-2.5 py-1.5 text-xs font-semibold transition ${
+                    launchRegime === 'SINGLE_SHIFT'
+                      ? 'border-nexus-black bg-nexus-black text-white'
+                      : 'border-nexus-border bg-zinc-50 text-zinc-700 hover:bg-zinc-100'
+                  }`}
+                >
+                  Apenas {activeShift.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLaunchRegime('FULL_DAY')}
+                  className={`rounded border px-2.5 py-1.5 text-xs font-semibold transition ${
+                    launchRegime === 'FULL_DAY'
+                      ? 'border-nexus-green bg-nexus-green text-white'
+                      : 'border-nexus-border bg-zinc-50 text-zinc-700 hover:bg-zinc-100'
+                  }`}
+                >
+                  Dia Todo (Manhã + Tarde — RN06)
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-medium text-zinc-700">Nº de Alunos</label>
               <input
@@ -557,7 +702,10 @@ export function SchedulePlannerBoard() {
             type="submit"
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-nexus-green px-4 py-2 text-xs font-semibold text-nexus-white hover:bg-nexus-green-dark"
           >
-            <Plus className="h-4 w-4" /> Lançar Curso e Distribuir Máquinas
+            <Plus className="h-4 w-4" />{' '}
+            {launchRegime === 'FULL_DAY'
+              ? 'Lançar Curso no Dia Todo (Manhã + Tarde)'
+              : 'Lançar Curso e Distribuir Máquinas'}
           </button>
         </form>
 
@@ -631,196 +779,21 @@ export function SchedulePlannerBoard() {
         </div>
       </div>
 
-      {/* Grade Interativa dos 33 Consultórios (1º e 2º Andar) com Hot-Swap, Pin, Quarentena e Chip "Por quê?" */}
-      {([1, 2] as const).map((floorNum) => {
-        const floorRooms = rooms.filter((r) => r.floor === floorNum);
-        return (
-          <section
-            key={floorNum}
-            className="rounded-lg border border-nexus-border bg-nexus-white p-4"
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-nexus-black">
-                {floorNum === 1
-                  ? '1º Andar — Andar Preferencial (Salas 1A-01 a 1A-23)'
-                  : '2º Andar — Andar de Expansão / Contingência (Salas 2A-01 a 2A-10)'}
-              </h3>
-              <span className="text-xs text-zinc-500">
-                Troque máquinas, trave (pin) ou clique em &ldquo;Por quê?&rdquo; para ver o cálculo
-                do Score
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {floorRooms.map((room) => {
-                const alloc = allocByRoomId.get(room.id);
-                const isSkipped = disabledRooms.has(room.id) || !room.defaultEnabled;
-                const machine = alloc ? machinesById.get(alloc.machineId) : undefined;
-                const demand = alloc
-                  ? shiftDemands.find((d) => d.id === alloc.demandId)
-                  : undefined;
-                const course = demand ? coursesById.get(demand.courseId) : undefined;
-                const exp = alloc ? explanationsByAllocId.get(alloc.id) : undefined;
-                const isExplainOpen = expandedExplainRoomId === room.id;
-
-                let cardStyle = 'border-nexus-border bg-zinc-50/60';
-                if (isSkipped) {
-                  cardStyle = 'border-dashed border-zinc-300 bg-zinc-100 text-zinc-400';
-                } else if (alloc) {
-                  if (alloc.matchQuality === 'IDEAL') {
-                    cardStyle = 'border-l-4 border-nexus-green bg-nexus-green-light/30';
-                  } else if (alloc.matchQuality === 'CONTINGENCY') {
-                    cardStyle = 'border-l-4 border-nexus-amber bg-amber-50/40';
-                  } else {
-                    cardStyle = 'border-l-4 border-zinc-800 bg-white';
-                  }
-                }
-
-                return (
-                  <div
-                    key={room.id}
-                    className={`flex flex-col justify-between rounded-lg border p-3 transition ${cardStyle}`}
-                  >
-                    <div>
-                      {/* Topo do Card: Código da Sala, Zona e Ações de Pin/Pular */}
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-sm font-bold text-nexus-black">
-                            {room.id}
-                          </span>
-                          <span className="rounded bg-zinc-200/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700">
-                            Z{room.zone} (+{room.reportProximity})
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          {alloc && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => togglePinAllocation(activeShift.id, room.id)}
-                                title={
-                                  alloc.isPinned
-                                    ? 'Destravar máquina desta sala'
-                                    : 'Travar (Pin) máquina nesta sala'
-                                }
-                                className={`rounded p-1 ${
-                                  alloc.isPinned
-                                    ? 'bg-nexus-black text-nexus-green'
-                                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-nexus-black'
-                                }`}
-                              >
-                                {alloc.isPinned ? (
-                                  <Lock className="h-3.5 w-3.5" />
-                                ) : (
-                                  <Unlock className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  quarantineMachineInShift(activeShift.id, alloc.machineId)
-                                }
-                                title="Simular quebra / colocar aparelho em manutenção com proposta de Menor Mudança (DEC-E)"
-                                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-nexus-red"
-                              >
-                                <Wrench className="h-3.5 w-3.5" />
-                              </button>
-                            </>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => toggleDisabledRoomInShift(activeShift.id, room.id)}
-                            className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-100"
-                          >
-                            {isSkipped ? 'Reativar' : 'Pular'}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Corpo do Card */}
-                      {isSkipped ? (
-                        <p className="mt-3 text-xs italic text-zinc-500">
-                          Sala pulada (Logística de Laudo — RN09)
-                        </p>
-                      ) : !alloc ? (
-                        <p className="mt-3 text-xs text-zinc-400">Consultório livre neste turno</p>
-                      ) : (
-                        <div className="mt-2 space-y-2">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="truncate text-xs font-bold text-nexus-black">
-                              {course?.shortName ?? demand?.courseId}
-                            </span>
-                            {alloc.inherited && (
-                              <span className="rounded bg-nexus-surface px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
-                                Mantido
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Seletor Hot-Swap de Máquina com detecção de Permuta RN10 */}
-                          <select
-                            value={alloc.machineId}
-                            onChange={(e) =>
-                              assignOrSwapMachineInRoom(
-                                activeShift.id,
-                                room.id,
-                                e.target.value,
-                              )
-                            }
-                            className="w-full rounded border border-nexus-border bg-white px-2 py-1 text-xs font-semibold text-nexus-black"
-                          >
-                            {machines
-                              .filter((m) => m.status !== 'MAINTENANCE')
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.internalLabel} ({m.brand} • T{m.tier})
-                                </option>
-                              ))}
-                          </select>
-
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono font-semibold text-nexus-green-deep">
-                              Score: {alloc.score} pts ({alloc.matchQuality})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedExplainRoomId(isExplainOpen ? null : room.id)
-                              }
-                              className="inline-flex items-center gap-0.5 font-medium text-nexus-black underline"
-                            >
-                              <HelpCircle className="h-3 w-3 text-nexus-green" /> Por quê?
-                            </button>
-                          </div>
-
-                          {isExplainOpen && exp && (
-                            <div className="mt-1.5 rounded border border-nexus-border bg-white p-2 text-[11px] text-zinc-700 shadow-inner">
-                              <p className="font-mono text-[10px] font-semibold text-nexus-black">
-                                {exp.formulaPt}
-                              </p>
-                              <p className="mt-1 leading-snug">{exp.textPt}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {machine && !isSkipped && (
-                      <div className="mt-2 border-t border-zinc-200/70 pt-1.5 text-[10px] text-zinc-500">
-                        WhatsApp: <strong className="text-zinc-800">{machine.code}</strong> •{' '}
-                        {machine.probes.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
+      {/* Container Desacoplado: Grade Operacional + Planta Radial Interativa com Drag-and-Drop (§9 e Tarefa 4.6) */}
+      <FloorMapContainer
+        shiftId={activeShift.id}
+        rooms={rooms}
+        shiftAllocations={shiftAllocations}
+        shiftDemands={shiftDemands}
+        machines={machines}
+        courses={courses}
+        explanations={explanations}
+        disabledRooms={disabledRooms}
+        onAssignOrSwapMachine={assignOrSwapMachineInRoom}
+        onTogglePinAllocation={togglePinAllocation}
+        onQuarantineMachine={quarantineMachineInShift}
+        onToggleDisabledRoom={toggleDisabledRoomInShift}
+      />
 
       {/* Relatório de Transição entre Turnos (RF06) & Exportação Oficial WhatsApp (RF07) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -831,7 +804,7 @@ export function SchedulePlannerBoard() {
           {!transitionReport ? (
             <p className="mt-2 text-xs text-zinc-500">
               Este é o primeiro turno da semana. O ponto de partida das máquinas vem do Snapshot
-              Inicial configurado no inventário (DEC-C).
+              Inicial configurado no inventário ou herdado da escala anterior (DEC-C).
             </p>
           ) : (
             <div className="mt-3 space-y-3 text-xs">
@@ -955,4 +928,3 @@ export function SchedulePlannerBoard() {
     </div>
   );
 }
-
